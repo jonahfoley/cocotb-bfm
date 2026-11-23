@@ -1,4 +1,5 @@
-"""Example: Incremental Migration & Interop with Legacy ``cocotb-bus`` and ``cocotbext-*``.
+"""Example: Incremental Migration & Interop with Legacy ``cocotb-bus`` and
+``cocotbext-*``.
 
 Demonstrates three low-overhead interop patterns side by side on real SystemVerilog RTL:
 
@@ -79,7 +80,8 @@ class _FallbackLegacyScoreboard:
 
 
 # Use real `cocotb_bus.scoreboard.Scoreboard` when `cocotb-bus` is installed;
-# otherwise fall back cleanly so this example runs out of the box without extra installs.
+# otherwise fall back cleanly so this example runs out of the box without extra
+# installs.
 LegacyScoreboardCls: Any
 try:
     from cocotb_bus.scoreboard import (  # type: ignore[import-not-found]
@@ -148,7 +150,9 @@ class LegacyStyleDriver:
 
 
 class CocotbextStyleSink:
-    """Example ``cocotbext-*`` sink (like ``AxiStreamSink`` / ``UartSink``) exposing ``recv()``."""
+    """Example ``cocotbext-*`` sink (like ``AxiStreamSink`` / ``UartSink``) exposing
+    ``recv()``.
+    """
 
     def __init__(self, mon: ByteStreamMonitor) -> None:
         self._mon = mon
@@ -184,14 +188,18 @@ async def test_legacy_cocotb_bus_and_cocotbext_interop(dut: HierarchyObject) -> 
     # Pattern 2: Wrap typed SV-interface Bus with `as_legacy_bus()` for a legacy driver.
     legacy_driver = LegacyStyleDriver(as_legacy_bus(top.in_if, name="in_if"), top.clk)
 
-    # Pattern 1: Plug a new `cocotb_bfm.Monitor` straight into legacy `cocotb_bus.Scoreboard`.
+    # Pattern 1: Plug a new `cocotb_bfm.Monitor` straight into legacy
+    # `cocotb_bus.Scoreboard`.
     legacy_expected = [ByteTx(0x11), ByteTx(0x22), ByteTx(0x33), ByteTx(0x44)]
     legacy_sb = LegacyScoreboardCls(dut, fail_immediately=True)
 
-    async with ByteStreamMonitor(top.out_if, top.clk, reset=rst, name="out_mon") as out_mon:
+    async with ByteStreamMonitor(
+        top.out_if, top.clk, reset=rst, name="out_mon"
+    ) as out_mon:
         legacy_sb.add_interface(out_mon, legacy_expected)
 
-        # Pattern 3: Plug a `cocotbext-*`-style async `recv()` sink into `cocotb_bfm.Scoreboard`.
+        # Pattern 3: Plug a `cocotbext-*`-style async `recv()` sink into
+        # `cocotb_bfm.Scoreboard`.
         ext_sink = CocotbextStyleSink(out_mon)
         adapter = AsyncSourceAdapter.from_sink(ext_sink, name="ext_sink_adapter")
 

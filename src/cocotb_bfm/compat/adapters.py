@@ -1,4 +1,4 @@
-"""Low-overhead adapters for interoperating with ``cocotbext-*`` and legacy ``cocotb-bus``."""
+"""Low-overhead adapters for ``cocotbext-*`` and legacy ``cocotb-bus`` interop."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ TxT = TypeVar("TxT")
 
 
 class AsyncSourceAdapter(Component, Generic[TxT]):
-    """Adapt any ``cocotbext-*`` async sink (``recv()``/``read()``) to :class:`MonitorProtocol`.
+    """Adapt any ``cocotbext-*`` async sink (``recv()``/``read()``) to
+    :class:`MonitorProtocol`.
 
     Allows sinks from ``cocotbext-axi`` (``AxiStreamSink.recv``), ``cocotbext-uart``
     (``UartSink.read``), ``cocotbext-spi`` (``SpiMaster.read``), or any custom async
@@ -62,8 +63,8 @@ class AsyncSourceAdapter(Component, Generic[TxT]):
             pull_fn = sink.read
         else:
             raise TypeError(
-                f"Cannot adapt {type(sink).__name__}: expected a 'recv' or 'read' coroutine "
-                "method, or pass method='...' explicitly."
+                f"Cannot adapt {type(sink).__name__}: expected a 'recv' or 'read' "
+                "coroutine method, or pass method='...' explicitly."
             )
         resolved_name = name if name is not None else type(sink).__name__
         return cls(pull_fn, name=resolved_name, transform=transform)
@@ -109,7 +110,8 @@ class QueueAdapter(AsyncSourceAdapter[TxT]):
 
 
 class LegacyBusShim:
-    """Thin compatibility shim presenting a typed :class:`Bus` with legacy ``cocotb-bus`` metadata.
+    """Thin compatibility shim presenting a typed :class:`Bus` with legacy
+    ``cocotb-bus`` metadata.
 
     Most ``cocotbext-*`` components simply duck-type signal attributes on the bus object
     (so passing a :class:`Bus` directly already works). Wrap with :func:`as_legacy_bus`
@@ -117,7 +119,9 @@ class LegacyBusShim:
     ``_signals``, ``_optional_signals``, or ``_name``.
     """
 
-    def __init__(self, bus: Bus, *, name: str | None = None, entity: Any = None) -> None:
+    def __init__(
+        self, bus: Bus, *, name: str | None = None, entity: Any = None
+    ) -> None:
         self._bus = bus
         self._name = name if name is not None else type(bus).__name__
         self._entity = entity
@@ -138,6 +142,10 @@ class LegacyBusShim:
         return f"LegacyBusShim({self._bus!r})"
 
 
-def as_legacy_bus(bus: Bus, *, name: str | None = None, entity: Any = None) -> LegacyBusShim:
-    """Wrap a typed :class:`Bus` in a :class:`LegacyBusShim` for legacy ``cocotbext-*`` code."""
+def as_legacy_bus(
+    bus: Bus, *, name: str | None = None, entity: Any = None
+) -> LegacyBusShim:
+    """Wrap a typed :class:`Bus` in a :class:`LegacyBusShim` for legacy ``cocotbext-*``
+    code.
+    """
     return LegacyBusShim(bus, name=name, entity=entity)

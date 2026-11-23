@@ -32,9 +32,15 @@ from tests.unit.fakes import (
 
 class StreamBus(Bus):
     valid: LogicObject = signal(direction=Direction.INITIATOR, idle_value=0)
-    data: LogicArrayObject = signal(direction=Direction.INITIATOR, min_width=8, max_width=64)
-    ready: LogicObject | None = signal(default=None, direction=Direction.TARGET, idle_value=1)
-    last: LogicObject | None = signal(default=None, aliases=("tlast", "eop"), idle_value=0)
+    data: LogicArrayObject = signal(
+        direction=Direction.INITIATOR, min_width=8, max_width=64
+    )
+    ready: LogicObject | None = signal(
+        default=None, direction=Direction.TARGET, idle_value=1
+    )
+    last: LogicObject | None = signal(
+        default=None, aliases=("tlast", "eop"), idle_value=0
+    )
 
 
 class ExtendedStreamBus(StreamBus):
@@ -130,7 +136,9 @@ def test_from_interface_array() -> None:
                 f"lanes_if[{i}]",
                 {
                     "valid": FakeLogicObject("valid", path=f"dut.lanes_if[{i}].valid"),
-                    "data": FakeLogicArrayObject("data", 8, path=f"dut.lanes_if[{i}].data"),
+                    "data": FakeLogicArrayObject(
+                        "data", 8, path=f"dut.lanes_if[{i}].data"
+                    ),
                 },
                 path=f"dut.lanes_if[{i}]",
             )
@@ -164,7 +172,9 @@ def test_from_mapping_with_dotted_and_indexed_paths() -> None:
         "lane0",
         {"vld": FakeLogicObject("vld"), "dat": FakeLogicArrayObject("dat", 8)},
     )
-    dut = FakeHierarchyObject("dut", {"lanes": FakeHierarchyArrayObject("lanes", [lane0])})
+    dut = FakeHierarchyObject(
+        "dut", {"lanes": FakeHierarchyArrayObject("lanes", [lane0])}
+    )
     direct_rdy = FakeLogicObject("external_rdy")
 
     bus = StreamBus.from_mapping(
@@ -226,12 +236,15 @@ def test_1bit_vector_tolerance_and_strict_mode() -> None:
     onebit = FakeLogicArrayObject("valid_vec", width=1)
     eightbit = FakeLogicArrayObject("data", width=8)
 
-    # Default (strict_types=False): 1-bit LogicArrayObject accepted on LogicObject field.
+    # Default (strict_types=False): 1-bit LogicArrayObject accepted on LogicObject
+    # field.
     bus = StreamBus(valid=onebit, data=eightbit)
     assert bus.valid is onebit
 
     # Multi-bit vector rejected on LogicObject field even in non-strict mode.
-    with pytest.raises(SignalTypeError, match="expected LogicObject, got FakeLogicArrayObject"):
+    with pytest.raises(
+        SignalTypeError, match="expected LogicObject, got FakeLogicArrayObject"
+    ):
         StreamBus(valid=eightbit, data=eightbit)
 
     # strict_types=True rejects 1-bit LogicArrayObject with helpful hint.

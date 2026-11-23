@@ -25,7 +25,7 @@ RespT = TypeVar("RespT")
 
 
 class TxHandle(Generic[TxT, RespT]):
-    """Awaitable completion handle returned by ``Driver.enqueue`` or ``RequestDriver``."""
+    """Awaitable handle returned by ``Driver.enqueue`` or ``RequestDriver``."""
 
     def __init__(self, transaction: TxT) -> None:
         self.transaction: TxT = transaction
@@ -41,7 +41,9 @@ class TxHandle(Generic[TxT, RespT]):
 
     @property
     def error(self) -> BaseException | None:
-        """Return any exception raised while driving this transaction (e.g., ``ResetError``)."""
+        """Return any exception raised while driving this transaction (e.g.,
+        ``ResetError``).
+        """
         return self._error
 
     def _set_result(self, result: RespT) -> None:
@@ -62,7 +64,7 @@ class TxHandle(Generic[TxT, RespT]):
             self._event.set()
 
     async def wait(self) -> RespT:
-        """Await transaction completion, returning the response or re-raising any error."""
+        """Await completion, returning the response or re-raising any error."""
         if not self._done:
             await self._event.wait()
         if self._error is not None:
@@ -71,7 +73,8 @@ class TxHandle(Generic[TxT, RespT]):
 
 
 class Driver(Component, Generic[BusT, TxT]):
-    """Composable, statically typed driver that operates on an externally owned :class:`Bus`.
+    """Composable, statically typed driver that operates on an externally owned
+    :class:`Bus`.
 
     Subclasses implement :meth:`_drive_transaction` (and optionally :meth:`_drive_idle`
     or :meth:`_on_reset`). Start the driver explicitly with :meth:`start` or
@@ -108,7 +111,9 @@ class Driver(Component, Generic[BusT, TxT]):
 
     @property
     def pending(self) -> int:
-        """Number of transactions waiting in the driver queue (excluding any in-flight item)."""
+        """Number of transactions waiting in the driver queue (excluding any in-flight
+        item).
+        """
         return self._queue.qsize()
 
     @property
@@ -136,7 +141,7 @@ class Driver(Component, Generic[BusT, TxT]):
         await handle.wait()
 
     async def send_many(self, transactions: Iterable[TxT]) -> None:
-        """Enqueue all ``transactions`` in order and await completion of the entire batch."""
+        """Enqueue all ``transactions`` in order and await batch completion."""
         handles: list[TxHandle[TxT, None]] = []
         for tx in transactions:
             handle: TxHandle[TxT, None] = TxHandle(tx)
@@ -211,7 +216,7 @@ class Driver(Component, Generic[BusT, TxT]):
             self._update_idle_state()
 
     async def _next_handle_or_reset(self) -> TxHandle[TxT, Any] | None:
-        """Await the next queued transaction, returning ``None`` if reset asserts first."""
+        """Await the next queued item, returning ``None`` if reset asserts first."""
         if self.reset is None:
             return await self._queue.get()
 
@@ -268,7 +273,9 @@ class Driver(Component, Generic[BusT, TxT]):
 
     async def _handle_reset_event(self, *, flush: bool | None = None) -> None:
         assert self.reset is not None
-        should_flush = (self.reset_policy is ResetPolicy.FLUSH) if flush is None else flush
+        should_flush = (
+            (self.reset_policy is ResetPolicy.FLUSH) if flush is None else flush
+        )
         await self._on_reset()
         if should_flush:
             self._flush_queue("Driver flushed on reset assertion")
@@ -288,7 +295,8 @@ class Driver(Component, Generic[BusT, TxT]):
 
 
 class RequestDriver(Driver[BusT, ReqT], Generic[BusT, ReqT, RespT]):
-    """Request/response driver for memory-mapped and CSR protocols (e.g., Avalon-MM, APB).
+    """Request/response driver for memory-mapped and CSR protocols (e.g., Avalon-MM,
+    APB).
 
     Subclasses implement :meth:`_handle_request` returning a statically typed ``RespT``.
     Callers await :meth:`request` (or :meth:`enqueue_request`) to receive the typed
@@ -303,7 +311,7 @@ class RequestDriver(Driver[BusT, ReqT], Generic[BusT, ReqT, RespT]):
         return handle
 
     async def request(self, req: ReqT) -> RespT:
-        """Enqueue ``req``, await completion, and return the typed response ``RespT``."""
+        """Enqueue ``req``, await completion, and return the typed ``RespT``."""
         handle: TxHandle[ReqT, RespT] = TxHandle(req)
         self._idle_event.clear()
         await self._queue.put(handle)

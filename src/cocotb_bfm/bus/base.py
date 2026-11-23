@@ -39,7 +39,11 @@ from cocotb_bfm.bus.spec import (
     sub_bus,
 )
 from cocotb_bfm.bus.validation import handle_path, validate_handle
-from cocotb_bfm.exceptions import BusBindingError, BusDirectionError, SignalNotFoundError
+from cocotb_bfm.exceptions import (
+    BusBindingError,
+    BusDirectionError,
+    SignalNotFoundError,
+)
 
 
 def _parse_annotation(annotation: Any) -> tuple[tuple[type[Any], ...], bool]:
@@ -66,7 +70,7 @@ def _parse_annotation(annotation: Any) -> tuple[tuple[type[Any], ...], bool]:
 
 
 def _extract_sub_bus_type(expected_types: tuple[type[Any], ...]) -> type[Bus] | None:
-    """Return the :class:`Bus` subclass if ``expected_types`` denotes a single sub-bus."""
+    """Return the :class:`Bus` subclass when ``expected_types`` is a single sub-bus."""
     bus_types = [t for t in expected_types if issubclass(t, Bus)]
     if len(bus_types) == 1 and len(expected_types) == 1:
         return bus_types[0]
@@ -141,14 +145,16 @@ class Bus:
                     case _SubBusMarker() as marker:
                         if sub_type is None:
                             raise BusBindingError(
-                                f"{cls.__name__}.{attr_name}: sub_bus() field must be annotated "
-                                "with a Bus subclass (or Optional[BusSubclass])."
+                                f"{cls.__name__}.{attr_name}: sub_bus() field must be "
+                                "annotated with a Bus subclass (or Optional)."
                             )
                         optional = hint_optional or marker.default is None
                         sub_bus_specs[attr_name] = SubBusSpec(
                             attr_name=attr_name,
                             bus_type=sub_type,
-                            hdl_name=marker.hdl_name if marker.hdl_name is not None else attr_name,
+                            hdl_name=marker.hdl_name
+                            if marker.hdl_name is not None
+                            else attr_name,
                             optional=optional,
                             separator=marker.separator,
                             aliases=marker.aliases,
@@ -218,8 +224,9 @@ class Bus:
 
         for name, val in kwargs.items():
             if name not in self._signal_specs and name not in self._sub_bus_specs:
+                cls_name = type(self).__name__
                 raise TypeError(
-                    f"{type(self).__name__}() got an unexpected keyword argument {name!r}"
+                    f"{cls_name}() got an unexpected keyword argument {name!r}"
                 )
             if name in bound:
                 raise TypeError(
@@ -235,8 +242,9 @@ class Bus:
                 elif spec.optional:
                     value = None
                 else:
+                    cls_name = type(self).__name__
                     raise TypeError(
-                        f"{type(self).__name__}() missing required signal argument: {name!r}"
+                        f"{cls_name}() missing required signal argument: {name!r}"
                     )
                 validated = validate_handle(
                     type(self).__name__,
@@ -252,12 +260,15 @@ class Bus:
                 elif sub_spec.optional:
                     sub_val = None
                 else:
+                    cls_name = type(self).__name__
                     raise TypeError(
-                        f"{type(self).__name__}() missing required sub-bus argument: {name!r}"
+                        f"{cls_name}() missing required sub-bus argument: {name!r}"
                     )
                 if sub_val is not None and not isinstance(sub_val, sub_spec.bus_type):
+                    cls_name = type(self).__name__
+                    exp_name = sub_spec.bus_type.__name__
                     raise BusBindingError(
-                        f"{type(self).__name__}.{name}: expected {sub_spec.bus_type.__name__}, "
+                        f"{cls_name}.{name}: expected {exp_name}, "
                         f"got {type(sub_val).__name__}"
                     )
                 object.__setattr__(self, name, sub_val)
@@ -295,7 +306,9 @@ class Bus:
                     if spec.optional:
                         kwargs[name] = None
                     else:
-                        raise format_not_found_error(cls.__name__, name, scope, attempted)
+                        raise format_not_found_error(
+                            cls.__name__, name, scope, attempted
+                        )
                 else:
                     kwargs[name] = handle
             else:
@@ -307,7 +320,8 @@ class Bus:
                         continue
                     raise SignalNotFoundError(
                         f"Could not resolve required sub-bus {cls.__name__}.{name} "
-                        f"({sub_spec.bus_type.__name__}) in scope '{handle_path(scope)}'."
+                        f"({sub_spec.bus_type.__name__}) in scope "
+                        f"'{handle_path(scope)}'."
                     )
                 sub_scope, sub_resolver = sub_resolution
                 try:
@@ -333,10 +347,12 @@ class Bus:
         strict_types: bool = False,
         overrides: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Bind directly to a SystemVerilog ``interface`` (or hierarchical scope handle)."""
+        """Bind directly to a SystemVerilog ``interface`` or hierarchical scope."""
         base: SignalResolver = InterfaceResolver(case_insensitive=case_insensitive)
         resolver: SignalResolver = (
-            CompositeResolver([MappingResolver(overrides, case_insensitive=case_insensitive), base])
+            CompositeResolver(
+                [MappingResolver(overrides, case_insensitive=case_insensitive), base]
+            )
             if overrides
             else base
         )
@@ -351,7 +367,9 @@ class Bus:
         strict_types: bool = False,
         overrides: Mapping[str, Any] | None = None,
     ) -> list[Self]:
-        """Bind every element of a SystemVerilog interface array (``HierarchyArrayObject``)."""
+        """Bind every element of a SystemVerilog interface array
+        (``HierarchyArrayObject``).
+        """
         return [
             cls.from_interface(
                 elem,
@@ -374,7 +392,9 @@ class Bus:
         strict_types: bool = False,
         overrides: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Bind to flat signals named ``<prefix><separator><signal><suffix>`` on ``entity``."""
+        """Bind to flat signals named ``<prefix><separator><signal><suffix>`` on
+        ``entity``.
+        """
         base: SignalResolver = PrefixResolver(
             prefix=prefix,
             separator=separator,
@@ -382,7 +402,9 @@ class Bus:
             case_insensitive=case_insensitive,
         )
         resolver: SignalResolver = (
-            CompositeResolver([MappingResolver(overrides, case_insensitive=case_insensitive), base])
+            CompositeResolver(
+                [MappingResolver(overrides, case_insensitive=case_insensitive), base]
+            )
             if overrides
             else base
         )
@@ -397,7 +419,9 @@ class Bus:
         strict_types: bool = False,
         overrides: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Bind directly to unprefixed signals on ``entity`` (alias for ``from_interface``)."""
+        """Bind directly to unprefixed signals on ``entity`` (alias for
+        ``from_interface``).
+        """
         return cls.from_interface(
             entity,
             case_insensitive=case_insensitive,
@@ -414,7 +438,7 @@ class Bus:
         case_insensitive: bool = False,
         strict_types: bool = False,
     ) -> Self:
-        """Bind signals using an explicit ``{attr_name: hdl_path_or_handle}`` dictionary."""
+        """Bind signals via an explicit ``{attr_name: hdl_path_or_handle}`` map."""
         return cls.from_resolver(
             entity,
             MappingResolver(mapping, case_insensitive=case_insensitive),
@@ -434,7 +458,9 @@ class Bus:
         """Bind signals by matching handle names in ``entity`` against ``pattern``."""
         base: SignalResolver = RegexResolver(pattern, case_insensitive=case_insensitive)
         resolver: SignalResolver = (
-            CompositeResolver([MappingResolver(overrides, case_insensitive=case_insensitive), base])
+            CompositeResolver(
+                [MappingResolver(overrides, case_insensitive=case_insensitive), base]
+            )
             if overrides
             else base
         )
@@ -460,7 +486,9 @@ class Bus:
 
     def present_signals(self) -> tuple[str, ...]:
         """Return names of all direct signals that are bound (non-``None``)."""
-        return tuple(name for name in self._signal_specs if getattr(self, name) is not None)
+        return tuple(
+            name for name in self._signal_specs if getattr(self, name) is not None
+        )
 
     def missing_optional_signals(self) -> tuple[str, ...]:
         """Return names of optional direct signals that were not present in RTL."""
@@ -471,7 +499,7 @@ class Bus:
         )
 
     def sample(self, *, include_sub_buses: bool = True) -> dict[str, Any]:
-        """Snapshot ``.value`` for all bound signals (and optionally nested sub-buses)."""
+        """Snapshot ``.value`` for all bound signals (and nested sub-buses)."""
         snapshot: dict[str, Any] = {}
         for name in self._field_order:
             match getattr(self, name):
@@ -498,8 +526,8 @@ class Bus:
                 attributes match bus signal names.
             role: If provided, enforces :class:`Direction` rules and raises
                 :class:`BusDirectionError` if attempting to drive an unowned signal.
-            strict: If ``True`` (default), raises :class:`BusBindingError` when ``values``
-                contains unknown signal names or targets an unbound optional signal.
+            strict: If ``True`` (default), raises :class:`BusBindingError` when
+                ``values`` contains unknown names or targets an unbound signal.
             action: Optional cocotb 2.0 write action class (e.g., ``Immediate``,
                 ``Deposit``, ``Force``) applied via ``handle.set(action(val))`` or
                 ``handle.value = action(val)``.
@@ -519,8 +547,9 @@ class Bus:
                 sub = getattr(self, name)
                 if sub is None:
                     if strict:
+                        cls_name = type(self).__name__
                         raise BusBindingError(
-                            f"{type(self).__name__}.{name}: optional sub-bus is not bound"
+                            f"{cls_name}.{name}: optional sub-bus is not bound"
                         )
                     continue
                 sub.drive(raw_val, role=role, strict=strict, action=action)
@@ -543,8 +572,9 @@ class Bus:
                 continue
 
             if role is not None and not spec.direction.is_driven_by(role):
+                cls_name = type(self).__name__
                 raise BusDirectionError(
-                    f"{type(self).__name__}.{name} has direction {spec.direction.value!r} "
+                    f"{cls_name}.{name} has direction {spec.direction.value!r} "
                     f"and cannot be driven by role {role.value!r}"
                 )
 
@@ -556,7 +586,7 @@ class Bus:
         role: Role | None = None,
         action: type[Any] | None = None,
     ) -> None:
-        """Drive all bound signals that declare an ``idle_value`` to their idle state."""
+        """Drive all bound signals declaring an ``idle_value`` to idle."""
         for name in self._field_order:
             if name in self._sub_bus_specs:
                 sub = getattr(self, name)

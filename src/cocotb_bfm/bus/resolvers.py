@@ -1,4 +1,4 @@
-"""Pluggable signal resolvers for flat buses, SystemVerilog interfaces, and custom maps."""
+"""Pluggable signal resolvers for flat buses, SV interfaces, and custom maps."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def lookup_child(
     *,
     case_insensitive: bool = False,
 ) -> Any | None:
-    """Look up an immediate child handle inside ``scope`` without Python keyword collisions.
+    """Look up an immediate child handle inside ``scope`` without keyword collisions.
 
     Prefers cocotb 2.0's bracket lookup (``scope[name]``) so HDL names such as ``in``,
     ``from``, or ``class`` never collide with Python attributes.
@@ -85,13 +85,15 @@ def resolve_path(
     *,
     case_insensitive: bool = False,
 ) -> Any | None:
-    """Resolve a possibly dotted/indexed HDL path such as ``'sub_if.lanes[0].valid'``."""
+    """Resolve a dotted/indexed HDL path such as ``'sub_if.lanes[0].valid'``."""
     current: Any = scope
     for segment in path.split("."):
         match = _INDEX_PART_RE.match(segment)
         if match:
             base_name = match.group("name")
-            current = lookup_child(current, base_name, case_insensitive=case_insensitive)
+            current = lookup_child(
+                current, base_name, case_insensitive=case_insensitive
+            )
             if current is None:
                 return None
             for idx_str in _SINGLE_INDEX_RE.findall(match.group("indices")):
@@ -130,21 +132,29 @@ def format_not_found_error(
                     suggestions.append(m)
             # Also try case-insensitive fuzzy match on tail segment.
             lower_map = {k.lower(): k for k in available}
-            for lm in difflib.get_close_matches(cand.lower(), lower_map.keys(), n=2, cutoff=0.5):
+            for lm in difflib.get_close_matches(
+                cand.lower(), lower_map.keys(), n=2, cutoff=0.5
+            ):
                 orig = lower_map[lm]
                 if orig not in suggestions:
                     suggestions.append(orig)
         if suggestions:
-            lines.append(f"Did you mean: {', '.join(repr(s) for s in suggestions[:5])}?")
+            lines.append(
+                f"Did you mean: {', '.join(repr(s) for s in suggestions[:5])}?"
+            )
         preview = available[:16]
-        suffix = f" ... (+{len(available) - len(preview)} more)" if len(available) > 16 else ""
+        suffix = (
+            f" ... (+{len(available) - len(preview)} more)"
+            if len(available) > 16
+            else ""
+        )
         lines.append(f"Available handles in '{scope_desc}': {preview}{suffix}")
     else:
         lines.append(
             f"No child handles were discovered in '{scope_desc}'. "
-            "If this is a SystemVerilog interface under Verilator, ensure interface signals "
-            "are exposed to VPI (e.g. Verilator 5+ with --public-flat-rw / --trace-structs "
-            "or non-optimized interface connections)."
+            "If this is a SystemVerilog interface under Verilator, ensure interface "
+            "signals are exposed to VPI (e.g. Verilator 5+ with --public-flat-rw / "
+            "--trace-structs or non-optimized interface connections)."
         )
 
     return SignalNotFoundError("\n".join(lines))
@@ -172,7 +182,7 @@ class SignalResolver(ABC):
     ) -> tuple[Any, SignalResolver] | None:
         """Return ``(child_scope, child_resolver)`` for a nested sub-bus, or ``None``.
 
-        Subclasses override this to support nested scopes (e.g., SystemVerilog sub-interfaces)
+        Subclasses override this to support nested scopes (e.g., SV sub-interfaces)
         or composed prefixes.
         """
         return None
@@ -181,7 +191,7 @@ class SignalResolver(ABC):
 class InterfaceResolver(SignalResolver):
     """Resolve signals directly inside a SystemVerilog ``interface`` or scope handle.
 
-    For nested sub-buses, first looks for a child scope handle (e.g., ``dut.axi_if.aw``).
+    For nested sub-buses, first looks for a child scope handle (e.g. ``dut.axi.aw``).
     If no child scope exists, falls back cleanly to prefixed members inside the same
     interface (e.g., ``dut.axi_if.awvalid`` or ``dut.axi_if.aw_valid``).
     """
@@ -203,7 +213,9 @@ class InterfaceResolver(SignalResolver):
         attempted: list[str] = []
         for candidate in spec.candidate_names:
             attempted.append(candidate)
-            handle = resolve_path(scope, candidate, case_insensitive=self.case_insensitive)
+            handle = resolve_path(
+                scope, candidate, case_insensitive=self.case_insensitive
+            )
             if handle is not None:
                 return handle, tuple(attempted)
         return None, tuple(attempted)
@@ -213,15 +225,21 @@ class InterfaceResolver(SignalResolver):
         scope: Any,
         spec: SubBusSpec,
     ) -> tuple[Any, SignalResolver] | None:
-        # 1. Try nested interface / hierarchy scope (e.g., axi_if.aw -> HierarchyObject).
+        # 1. Try nested interface / hierarchy scope (e.g., axi_if.aw).
         for candidate in spec.candidate_names:
-            child = lookup_child(scope, candidate, case_insensitive=self.case_insensitive)
+            child = lookup_child(
+                scope, candidate, case_insensitive=self.case_insensitive
+            )
             if child is not None and _is_scope_like(child):
                 return child, self
 
         # 2. Fallback: flat prefixed signals within the same interface
         #    (e.g., axi_if.aw_valid or axi_if.awvalid).
-        seps = (spec.separator,) if spec.separator is not None else self.flat_sub_bus_separators
+        seps = (
+            (spec.separator,)
+            if spec.separator is not None
+            else self.flat_sub_bus_separators
+        )
         resolvers: list[SignalResolver] = [
             PrefixResolver(
                 prefix=candidate,
@@ -264,7 +282,9 @@ class PrefixResolver(SignalResolver):
         for candidate in spec.candidate_names:
             full_name = self._build_name(candidate)
             attempted.append(full_name)
-            handle = resolve_path(scope, full_name, case_insensitive=self.case_insensitive)
+            handle = resolve_path(
+                scope, full_name, case_insensitive=self.case_insensitive
+            )
             if handle is not None:
                 return handle, tuple(attempted)
         return None, tuple(attempted)
@@ -277,8 +297,12 @@ class PrefixResolver(SignalResolver):
         sep = self.separator if spec.separator is None else spec.separator
         resolvers: list[SignalResolver] = []
         for candidate in spec.candidate_names:
-            child_prefix = f"{self.prefix}{self.separator}{candidate}" if self.prefix else candidate
-            # Try with explicit separator first, then direct concatenation (e.g., m_axi_awvalid)
+            child_prefix = (
+                f"{self.prefix}{self.separator}{candidate}"
+                if self.prefix
+                else candidate
+            )
+            # Try explicit separator first, then direct concat (e.g. m_axi_awvalid)
             # when the sub-bus did not lock a custom separator.
             resolvers.append(
                 PrefixResolver(
@@ -329,7 +353,9 @@ class MappingResolver(SignalResolver):
             case None:
                 return None, ()
             case str() as path:
-                handle = resolve_path(scope, path, case_insensitive=self.case_insensitive)
+                handle = resolve_path(
+                    scope, path, case_insensitive=self.case_insensitive
+                )
                 return handle, (path,)
             case target:
                 return target, (f"<direct:{spec.attr_name}>",)
@@ -343,11 +369,17 @@ class MappingResolver(SignalResolver):
             return None
         match self.mapping[spec.attr_name]:
             case Mapping() as nested_map:
-                return scope, MappingResolver(nested_map, case_insensitive=self.case_insensitive)
+                return scope, MappingResolver(
+                    nested_map, case_insensitive=self.case_insensitive
+                )
             case str() as path:
-                child = resolve_path(scope, path, case_insensitive=self.case_insensitive)
+                child = resolve_path(
+                    scope, path, case_insensitive=self.case_insensitive
+                )
                 if child is not None and _is_scope_like(child):
-                    return child, InterfaceResolver(case_insensitive=self.case_insensitive)
+                    return child, InterfaceResolver(
+                        case_insensitive=self.case_insensitive
+                    )
                 return scope, PrefixResolver(
                     prefix=path,
                     case_insensitive=self.case_insensitive,
@@ -362,7 +394,7 @@ class RegexResolver(SignalResolver):
     """Resolve signals by matching scope keys against a regular expression.
 
     The regex must contain either a named group ``(?P<signal>...)`` or at least one
-    capturing group whose extracted value is matched against each signal's candidate names.
+    capturing group whose value is matched against each signal's candidate names.
     """
 
     def __init__(
@@ -408,7 +440,9 @@ class RegexResolver(SignalResolver):
             attempted.append(f"/{self.pattern.pattern}/ -> {candidate}")
             matched_key = index.get(norm)
             if matched_key is not None:
-                handle = lookup_child(scope, matched_key, case_insensitive=self.case_insensitive)
+                handle = lookup_child(
+                    scope, matched_key, case_insensitive=self.case_insensitive
+                )
                 if handle is not None:
                     return handle, tuple(attempted)
         return None, tuple(attempted)

@@ -1,4 +1,4 @@
-"""Statically typed SystemVerilog packed-struct encoder/decoder for cocotb 2.0 handles."""
+"""Statically typed SystemVerilog packed-struct codec for cocotb 2.0 handles."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from cocotb_bfm.exceptions import BusBindingError, SignalWidthError
 
 @dataclass(frozen=True, slots=True)
 class BitFieldSpec:
-    """Bit-slice layout for one field of a :class:`PackedStruct` (MSB-first SV order)."""
+    """Bit-slice layout for one :class:`PackedStruct` field (MSB-first SV order)."""
 
     name: str
     width: int
@@ -33,7 +33,7 @@ class _BitFieldMarker:
 
 
 def bitfield(width: int, *, default: int = 0, signed: bool = False) -> Any:
-    """Declare a bitfield on a :class:`PackedStruct` subclass (MSB-first, matching SV packed order).
+    """Declare a bitfield on a :class:`PackedStruct` (MSB-first SV packed order).
 
     Args:
         width: Field width in bits (must be >= 1).
@@ -101,7 +101,8 @@ class PackedStruct:
                     delattr(cls, attr_name)
                 case _:
                     raise BusBindingError(
-                        f"{cls.__name__}.{attr_name}: PackedStruct fields must use bitfield(width)"
+                        f"{cls.__name__}.{attr_name}: PackedStruct fields must use "
+                        "bitfield(width)"
                     )
 
         total = sum(m.width for _, m in raw_fields)
@@ -128,8 +129,9 @@ class PackedStruct:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         specs = self._bitfields
         if len(args) > len(specs):
+            cls_name = type(self).__name__
             raise TypeError(
-                f"{type(self).__name__}() takes at most {len(specs)} positional arguments "
+                f"{cls_name}() takes at most {len(specs)} positional arguments "
                 f"but {len(args)} were given"
             )
 
@@ -140,11 +142,14 @@ class PackedStruct:
         valid_names = {s.name for s in specs}
         for key, val in kwargs.items():
             if key not in valid_names:
+                cls_name = type(self).__name__
                 raise TypeError(
-                    f"{type(self).__name__}() got an unexpected keyword argument {key!r}"
+                    f"{cls_name}() got an unexpected keyword argument {key!r}"
                 )
             if key in bound:
-                raise TypeError(f"{type(self).__name__}() got multiple values for argument {key!r}")
+                raise TypeError(
+                    f"{type(self).__name__}() got multiple values for argument {key!r}"
+                )
             bound[key] = int(val)
 
         for spec in specs:
@@ -177,13 +182,13 @@ class PackedStruct:
 
     @classmethod
     def unpack(cls, value: int | LogicArray) -> Self:
-        """Unpack an integer or cocotb 2.0 :class:`~cocotb.types.LogicArray` into ``cls``."""
+        """Unpack an integer or :class:`~cocotb.types.LogicArray` into ``cls``."""
         match value:
             case LogicArray() as arr:
                 if len(arr) != cls._total_width:
                     raise SignalWidthError(
-                        f"{cls.__name__}.unpack: expected {cls._total_width}-bit LogicArray, "
-                        f"got {len(arr)} bits"
+                        f"{cls.__name__}.unpack: expected {cls._total_width}-bit "
+                        f"LogicArray, got {len(arr)} bits"
                     )
                 raw_int = arr.to_unsigned()
             case int() as integer:
@@ -200,7 +205,7 @@ class PackedStruct:
 
     @classmethod
     def from_handle(cls, handle: Any) -> Self:
-        """Read and unpack a cocotb 2.0 packed-struct handle (``PackedObject`` or scope)."""
+        """Read and unpack a packed-struct handle (``PackedObject`` or scope)."""
         actual_width = handle_width(handle)
         if actual_width is not None:
             if actual_width != cls._total_width:
@@ -225,7 +230,7 @@ class PackedStruct:
         return cls(**kwargs)
 
     def write_handle(self, handle: Any) -> None:
-        """Pack and drive this struct onto a cocotb 2.0 handle (``PackedObject`` or scope)."""
+        """Pack and drive this struct onto a handle (``PackedObject`` or scope)."""
         actual_width = handle_width(handle)
         if actual_width is not None:
             if actual_width != self._total_width:
@@ -247,14 +252,19 @@ class PackedStruct:
         if type(other) is not type(self):
             return NotImplemented
         return all(
-            getattr(self, spec.name) == getattr(other, spec.name) for spec in self._bitfields
+            getattr(self, spec.name) == getattr(other, spec.name)
+            for spec in self._bitfields
         )
 
     def __hash__(self) -> int:
-        return hash((type(self), *(getattr(self, spec.name) for spec in self._bitfields)))
+        return hash(
+            (type(self), *(getattr(self, spec.name) for spec in self._bitfields))
+        )
 
     def __repr__(self) -> str:
-        fields_str = ", ".join(f"{s.name}={getattr(self, s.name)!r}" for s in self._bitfields)
+        fields_str = ", ".join(
+            f"{s.name}={getattr(self, s.name)!r}" for s in self._bitfields
+        )
         return f"{type(self).__name__}({fields_str})"
 
 
@@ -266,7 +276,8 @@ def _check_field_range(cls_name: str, spec: BitFieldSpec, value: int) -> None:
         lo = 0
         hi = (1 << spec.width) - 1
     if not (lo <= value <= hi):
+        kind = "signed" if spec.signed else "unsigned"
         raise ValueError(
-            f"{cls_name}.{spec.name} ({spec.width}-bit {'signed' if spec.signed else 'unsigned'}): "
+            f"{cls_name}.{spec.name} ({spec.width}-bit {kind}): "
             f"value {value} out of range [{lo}, {hi}]"
         )

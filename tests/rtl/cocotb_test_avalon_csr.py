@@ -3,10 +3,13 @@
 Exercises:
 - Packed structs (`csr_meta_t`, `csr_ctrl_t`, `csr_status_t`) inside SV `interface`s
 - Nested composite `Bus` (`CsrSubsystemBus` binding both `csr_if` and `diag_if`)
-- `RequestDriver` (`AvalonCsrMaster`) with typed responses, `waitrequest`, `byteenable`, W1C/RO CSRs
-- Asynchronous active-low reset (`Reset(..., active_low=True, sync=False)`) asserted mid-clock-cycle
+- `RequestDriver` (`AvalonCsrMaster`) with typed responses, `waitrequest`, `byteenable`,
+  W1C/RO CSRs
+- Asynchronous active-low reset (`Reset(..., active_low=True, sync=False)`) asserted
+  mid-clock-cycle
   under both `ResetPolicy.FLUSH` (default) and `ResetPolicy.PAUSE`
-- `AvalonCsrBus.from_prefix(dut, "flat_csr")` proving identical BFM reuse on flat signals
+- `AvalonCsrBus.from_prefix(dut, "flat_csr")` proving identical BFM reuse on flat
+  signals
 - `Scoreboard` with golden CSR model and `KeyedMatcher` tag matching
 """
 
@@ -64,8 +67,12 @@ async def _init_avalon_dut(dut: HierarchyObject) -> None:
 
 
 @cocotb.test()
-async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(dut: HierarchyObject) -> None:
-    """Full end-to-end Avalon-MM CSR test via SV interfaces, packed structs, waitstates, and SB."""
+async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
+    dut: HierarchyObject,
+) -> None:
+    """Full end-to-end Avalon-MM CSR test via SV interfaces, packed structs, waitstates,
+    and SB.
+    """
     await _init_avalon_dut(dut)
 
     # Bind nested composite bus covering BOTH `dut.csr_if` and `dut.diag_if`.
@@ -79,7 +86,8 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(dut: Hierar
     ):
         ch = sb.add_channel("csr_tx", mon)
 
-        # 1. Verify reset default CTRL register & packed CsrCtrl decode with waitstates = 2.
+        # 1. Verify reset default CTRL register & packed CsrCtrl decode with waitstates
+        # = 2.
         dut.wait_cycles.value = 2
         m1 = CsrMeta(tag=0x3, priv=1, secure=1, burst_hint=0)
         ch.expect(AvalonObservedTx(ADDR_CTRL, False, 0x0000_0001, 0xF, m1))
@@ -120,7 +128,8 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(dut: Hierar
         ch.expect(AvalonObservedTx(ADDR_STATUS, True, 0xFFFF_FFFF, 0xF, m4))
         await master.write_reg(ADDR_STATUS, 0xFFFF_FFFF, meta=m4)
 
-        # At this point: 4 writes (CTRL, SCRATCHx2, STATUS) and 3 reads completed before this read.
+        # At this point: 4 writes (CTRL, SCRATCHx2, STATUS) and 3 reads completed before
+        # this read.
         await RisingEdge(dut.clk)  # type: ignore[arg-type]
         live_diag = CsrStatus.from_handle(subsys.diag.status)
         assert live_diag == CsrStatus(
@@ -164,7 +173,7 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(dut: Hierar
 async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
     dut: HierarchyObject,
 ) -> None:
-    """Verify asynchronous reset asserted mid-cycle under ResetPolicy.FLUSH and PAUSE."""
+    """Verify async reset asserted mid-cycle under ResetPolicy.FLUSH and PAUSE."""
     await _init_avalon_dut(dut)
 
     subsys = CsrSubsystemBus.from_interface(dut)
@@ -200,7 +209,8 @@ async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
 
         # Hardware registers reset immediately before the next clock edge!
         assert CsrStatus.from_handle(subsys.diag.status).write_count == 0
-        # Driver immediately flushed stalled + queued requests with ResetError and idled bus!
+        # Driver immediately flushed stalled + queued requests with ResetError and idled
+        # bus!
         for handle in (h_stalled, h_queued):
             try:
                 await handle.wait()
@@ -232,7 +242,9 @@ async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
     ) as master_pause:
         dut.force_stall.value = 1
         retry_meta = CsrMeta(tag=0xD, priv=3, secure=1, burst_hint=0)
-        h_retry = master_pause.enqueue_request(_make_read(ADDR_CTRL, tag=0xD, meta=retry_meta))
+        h_retry = master_pause.enqueue_request(
+            _make_read(ADDR_CTRL, tag=0xD, meta=retry_meta)
+        )
 
         await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
         assert not h_retry.done
@@ -255,8 +267,10 @@ async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
 
 
 @cocotb.test()
-async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(dut: HierarchyObject) -> None:
-    """Bind the exact same AvalonCsrBus via from_prefix AND verify KeyedMatcher by tag."""
+async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(
+    dut: HierarchyObject,
+) -> None:
+    """Bind AvalonCsrBus via from_prefix AND verify KeyedMatcher by packed tag."""
     await _init_avalon_dut(dut)
 
     # 1. Flat prefixed Avalon-MM CSR bank (optional meta/resp_meta omitted -> None).
@@ -266,7 +280,9 @@ async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(dut: HierarchyObject)
 
     arst = Reset(dut.arst_n, active_low=True, sync=False)
     async with (
-        AvalonCsrMaster(flat_bus, dut.clk, reset=arst, name="flat_master") as flat_master,
+        AvalonCsrMaster(
+            flat_bus, dut.clk, reset=arst, name="flat_master"
+        ) as flat_master,
         AvalonCsrMonitor(flat_bus, dut.clk, reset=arst, name="flat_mon") as flat_mon,
         Scoreboard(name="flat_csr_sb") as sb,
     ):
@@ -283,14 +299,18 @@ async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(dut: HierarchyObject)
     # 2. KeyedMatcher on SV interface CSR bank keyed by packed-struct `meta.tag`.
     if_bus = AvalonCsrBus.from_interface(dut.csr_if)
     async with (
-        AvalonCsrMaster(if_bus, dut.clk, reset=arst, name="keyed_master") as keyed_master,
+        AvalonCsrMaster(
+            if_bus, dut.clk, reset=arst, name="keyed_master"
+        ) as keyed_master,
         AvalonCsrMonitor(if_bus, dut.clk, reset=arst, name="keyed_mon") as keyed_mon,
         Scoreboard(name="keyed_sb") as keyed_sb,
     ):
         kch = keyed_sb.add_channel(
             "tagged",
             keyed_mon,
-            matcher=KeyedMatcher(key=lambda tx: tx.meta.tag if tx.meta is not None else -1),
+            matcher=KeyedMatcher(
+                key=lambda tx: tx.meta.tag if tx.meta is not None else -1
+            ),
         )
         m_a = CsrMeta(tag=2, priv=1)
         m_b = CsrMeta(tag=6, priv=2)
@@ -306,7 +326,9 @@ async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(dut: HierarchyObject)
 def _make_write(address: int, data: int, *, tag: int = 0):
     from examples.avalon_mm_csr.avalon_csr import AvalonReq
 
-    return AvalonReq(address=address, is_write=True, writedata=data, meta=CsrMeta(tag=tag))
+    return AvalonReq(
+        address=address, is_write=True, writedata=data, meta=CsrMeta(tag=tag)
+    )
 
 
 def _make_read(address: int, *, tag: int = 0, meta: CsrMeta | None = None):

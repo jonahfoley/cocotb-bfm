@@ -3,11 +3,16 @@
 Demonstrates how users build a production-grade protocol BFM on top of ``cocotb-bfm``:
 
 - Typed :class:`~cocotb_bfm.Bus` with raw cocotb 2.0 handles and optional sidebands
-- Typed :class:`~cocotb_bfm.PackedStruct` codecs matching SystemVerilog ``struct packed``
-- Nested composite :class:`~cocotb_bfm.Bus` combining an Avalon-MM SV interface + diag interface
-- :class:`~cocotb_bfm.RequestDriver` returning statically typed :class:`AvalonResp` objects
-- Passive :class:`~cocotb_bfm.Monitor` capturing transactions for :class:`~cocotb_bfm.Scoreboard`
-- Full support for ``waitrequest`` backpressure, ``byteenable``, ``readdatavalid``, and async reset
+- Typed :class:`~cocotb_bfm.PackedStruct` codecs matching SystemVerilog ``struct
+  packed``
+- Nested composite :class:`~cocotb_bfm.Bus` combining an Avalon-MM SV interface + diag
+  interface
+- :class:`~cocotb_bfm.RequestDriver` returning statically typed :class:`AvalonResp`
+  objects
+- Passive :class:`~cocotb_bfm.Monitor` capturing transactions for
+  :class:`~cocotb_bfm.Scoreboard`
+- Full support for ``waitrequest`` backpressure, ``byteenable``, ``readdatavalid``, and
+  async reset
 """
 
 from __future__ import annotations
@@ -71,7 +76,9 @@ class CsrStatus(PackedStruct):
 
 
 class AvalonCsrBus(Bus):
-    """Avalon-MM CSR bus with optional ``byteenable``, ``waitrequest``, and packed ``meta``."""
+    """Avalon-MM CSR bus with optional ``byteenable``, ``waitrequest``, and packed
+    ``meta``.
+    """
 
     address: VectorObject = signal(direction=Direction.INITIATOR, idle_value=0)
     read: LogicObject = signal(direction=Direction.INITIATOR, idle_value=0)
@@ -86,7 +93,9 @@ class AvalonCsrBus(Bus):
     meta: VectorObject | None = signal(
         default=None, direction=Direction.INITIATOR, width=8, idle_value=0
     )
-    resp_meta: VectorObject | None = signal(default=None, direction=Direction.TARGET, width=8)
+    resp_meta: VectorObject | None = signal(
+        default=None, direction=Direction.TARGET, width=8
+    )
 
 
 class CsrDiagBus(Bus):
@@ -97,7 +106,7 @@ class CsrDiagBus(Bus):
 
 
 class CsrSubsystemBus(Bus):
-    """Composite bus combining the Avalon-MM CSR SV interface and diagnostic SV interface."""
+    """Composite bus combining Avalon-MM CSR and diagnostic SV interfaces."""
 
     csr: AvalonCsrBus = sub_bus(hdl_name="csr_if")
     diag: CsrDiagBus = sub_bus(hdl_name="diag_if")
@@ -224,7 +233,9 @@ class AvalonCsrMaster(RequestDriver[AvalonCsrBus, AvalonReq, AvalonResp]):
             await RisingEdge(self.clock)
 
         rdata = bus.readdata.value.to_unsigned()
-        rmeta = CsrMeta.from_handle(bus.resp_meta) if bus.resp_meta is not None else None
+        rmeta = (
+            CsrMeta.from_handle(bus.resp_meta) if bus.resp_meta is not None else None
+        )
         return AvalonResp(
             address=req.address,
             is_write=False,
@@ -258,7 +269,11 @@ class AvalonCsrMonitor(Monitor[AvalonCsrBus, AvalonObservedTx]):
                     raddr, rbe = self._pending_reads.popleft()
                 else:
                     raddr, rbe = bus.address.value.to_unsigned(), 0xF
-                rmeta = CsrMeta.from_handle(bus.resp_meta) if bus.resp_meta is not None else None
+                rmeta = (
+                    CsrMeta.from_handle(bus.resp_meta)
+                    if bus.resp_meta is not None
+                    else None
+                )
                 self._emit(
                     AvalonObservedTx(
                         address=raddr,
@@ -271,7 +286,11 @@ class AvalonCsrMonitor(Monitor[AvalonCsrBus, AvalonObservedTx]):
 
             # 2. Sample newly accepted write/read commands.
             if accepted and int(bus.write.value) == 1:
-                be = bus.byteenable.value.to_unsigned() if bus.byteenable is not None else 0xF
+                be = (
+                    bus.byteenable.value.to_unsigned()
+                    if bus.byteenable is not None
+                    else 0xF
+                )
                 meta = CsrMeta.from_handle(bus.meta) if bus.meta is not None else None
                 self._emit(
                     AvalonObservedTx(
@@ -283,5 +302,9 @@ class AvalonCsrMonitor(Monitor[AvalonCsrBus, AvalonObservedTx]):
                     )
                 )
             elif accepted and int(bus.read.value) == 1:
-                be = bus.byteenable.value.to_unsigned() if bus.byteenable is not None else 0xF
+                be = (
+                    bus.byteenable.value.to_unsigned()
+                    if bus.byteenable is not None
+                    else 0xF
+                )
                 self._pending_reads.append((bus.address.value.to_unsigned(), be))

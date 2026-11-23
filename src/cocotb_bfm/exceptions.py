@@ -16,15 +16,15 @@ class SignalNotFoundError(BusBindingError):
 
 
 class SignalTypeError(BusBindingError):
-    """Raised when a resolved handle does not match the declared cocotb 2.0 handle type."""
+    """Raised when a handle does not match the declared cocotb 2.0 handle type."""
 
 
 class SignalWidthError(BusBindingError):
-    """Raised when a resolved handle's bit width violates a declared width constraint."""
+    """Raised when a handle's bit width violates a declared width constraint."""
 
 
 class BusDirectionError(BfmError):
-    """Raised when driving a signal whose declared direction forbids the caller's role."""
+    """Raised when driving a signal whose direction forbids the caller's role."""
 
 
 class ComponentLifecycleError(BfmError):

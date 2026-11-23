@@ -66,7 +66,7 @@ packages = ["cocotb_bfm"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 88
 src = ["src", "tests"]
 
 [tool.ruff.lint]

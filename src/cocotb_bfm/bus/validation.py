@@ -28,7 +28,9 @@ def handle_path(handle: Any) -> str:
 
 
 def handle_width(handle: Any) -> int | None:
-    """Return the bit/element width of ``handle``, or ``None`` if unsized or a hierarchy scope."""
+    """Return the bit/element width of ``handle``, or ``None`` if unsized or a hierarchy
+    scope.
+    """
     match handle:
         case LogicObject():
             return 1
@@ -71,7 +73,9 @@ def validate_handle(
     if handle is None:
         if spec.optional:
             return None
-        raise SignalTypeError(f"{bus_cls_name}.{spec.attr_name}: required signal cannot be None")
+        raise SignalTypeError(
+            f"{bus_cls_name}.{spec.attr_name}: required signal cannot be None"
+        )
 
     if spec.expected_types:
         matches = isinstance(handle, spec.expected_types)
@@ -82,8 +86,10 @@ def validate_handle(
                 ):
                     matches = True
                 case PackedObject() if LogicArrayObject in spec.expected_types:
-                    # cocotb 2.1 maps Verilog packed vectors to PackedObject while cocotb 2.0
-                    # and VHDL map them to LogicArrayObject; both share _LogicArrayObjectBase.
+                    # cocotb 2.1 maps Verilog packed vectors to PackedObject while
+                    # cocotb 2.0
+                    # and VHDL map them to LogicArrayObject; both share
+                    # _LogicArrayObjectBase.
                     matches = True
                 case LogicArrayObject() if PackedObject in spec.expected_types:
                     matches = True
@@ -95,15 +101,17 @@ def validate_handle(
             extra = ""
             if strict_types:
                 match handle:
-                    case _ if LogicObject in spec.expected_types and _is_1bit_vector(handle):
+                    case _ if LogicObject in spec.expected_types and _is_1bit_vector(
+                        handle
+                    ):
                         extra = (
-                            " (pass strict_types=False to allow 1-bit vector handles on "
-                            "LogicObject)"
+                            " (pass strict_types=False to allow 1-bit vector handles"
+                            " on LogicObject)"
                         )
                     case PackedObject() if LogicArrayObject in spec.expected_types:
                         extra = (
-                            " (in cocotb 2.1+, Verilog packed vectors are PackedObject; "
-                            "annotate with VectorObject or pass strict_types=False)"
+                            " (in cocotb 2.1+, Verilog packed vectors are PackedObject;"
+                            " annotate with VectorObject or pass strict_types=False)"
                         )
                     case _:
                         pass
@@ -112,7 +120,11 @@ def validate_handle(
                 f"expected {expected_names}, got {actual_type}{extra}"
             )
 
-    if spec.width is not None or spec.min_width is not None or spec.max_width is not None:
+    if (
+        spec.width is not None
+        or spec.min_width is not None
+        or spec.max_width is not None
+    ):
         actual_width = handle_width(handle)
         if actual_width is None:
             raise SignalWidthError(

@@ -17,7 +17,9 @@ from cocotb.types import Logic, LogicArray
 class FakeLogicObject(LogicObject):  # type: ignore[misc]
     """Minimal in-memory ``LogicObject`` subclass for unit testing."""
 
-    def __init__(self, name: str, value: int | str = 0, *, path: str | None = None) -> None:
+    def __init__(
+        self, name: str, value: int | str = 0, *, path: str | None = None
+    ) -> None:
         self._name = name
         self._path = path or name
         self._type = "GPI_LOGIC"

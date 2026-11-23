@@ -49,7 +49,9 @@ async def _init_dut(dut: HierarchyObject) -> None:
 
 @cocotb.test()
 async def test_sv_interface_binding_and_scoreboard(dut: HierarchyObject) -> None:
-    """Bind real SystemVerilog interfaces (`if_in`, `if_out`) and verify end-to-end with model."""
+    """Bind real SystemVerilog interfaces (`if_in`, `if_out`) and verify end-to-end with
+    model.
+    """
     await _init_dut(dut)
 
     in_bus = DummyStreamBus.from_interface(dut.if_in)
@@ -72,7 +74,9 @@ async def test_sv_interface_binding_and_scoreboard(dut: HierarchyObject) -> None
         async with (
             DummyStreamDriver(in_bus, dut.clk, reset=rst, name="if_drv") as drv,
             DummyStreamMonitor(in_bus, dut.clk, reset=rst, name="if_in_mon") as in_mon,
-            DummyStreamMonitor(out_bus, dut.clk, reset=rst, name="if_out_mon") as out_mon,
+            DummyStreamMonitor(
+                out_bus, dut.clk, reset=rst, name="if_out_mon"
+            ) as out_mon,
             Scoreboard(name="sv_if_sb") as sb,
         ):
             out_ch = sb.add_channel("out", out_mon)
@@ -100,8 +104,10 @@ async def test_sv_interface_binding_and_scoreboard(dut: HierarchyObject) -> None
 
 
 @cocotb.test()
-async def test_flat_prefix_and_sv_interface_array_and_1bit_vector(dut: HierarchyObject) -> None:
-    """Verify `from_prefix`, `from_interface_array`, and 1-bit `logic [0:0]` tolerance."""
+async def test_flat_prefix_and_sv_interface_array_and_1bit_vector(
+    dut: HierarchyObject,
+) -> None:
+    """Verify `from_prefix`, `from_interface_array`, and 1-bit vector tolerance."""
     await _init_dut(dut)
 
     # 1. Flat prefixed bus (`raw_in_*` -> `raw_out_*`, XOR 0xA5)
@@ -137,8 +143,10 @@ async def test_flat_prefix_and_sv_interface_array_and_1bit_vector(dut: Hierarchy
 
 
 @cocotb.test()
-async def test_explicit_lifecycle_and_reset_flush_and_pause(dut: HierarchyObject) -> None:
-    """Verify explicit start/stop, ResetPolicy.FLUSH (default), and ResetPolicy.PAUSE."""
+async def test_explicit_lifecycle_and_reset_flush_and_pause(
+    dut: HierarchyObject,
+) -> None:
+    """Verify explicit lifecycle, ResetPolicy.FLUSH (default), and PAUSE."""
     await _init_dut(dut)
 
     in_bus = DummyStreamBus.from_interface(dut.if_in)
@@ -156,7 +164,8 @@ async def test_explicit_lifecycle_and_reset_flush_and_pause(dut: HierarchyObject
     except ComponentLifecycleError:
         pass
 
-    # Stall output so driver blocks mid-transaction, then assert reset under default FLUSH.
+    # Stall output so driver blocks mid-transaction, then assert reset under default
+    # FLUSH.
     assert out_bus.ready is not None
     out_bus.ready.value = 0
 
@@ -171,7 +180,8 @@ async def test_explicit_lifecycle_and_reset_flush_and_pause(dut: HierarchyObject
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
 
-    # Both stalled and queued transactions must fail with ResetError and bus must be idle.
+    # Both stalled and queued transactions must fail with ResetError and bus must be
+    # idle.
     for h in (h_stalled, h_queued):
         try:
             await h.wait()
@@ -185,7 +195,9 @@ async def test_explicit_lifecycle_and_reset_flush_and_pause(dut: HierarchyObject
     dut.rst_n.value = 1
     await RisingEdge(dut.clk)  # type: ignore[arg-type]
 
-    async with DummyStreamMonitor(out_bus, dut.clk, reset=rst, name="post_rst_mon") as mon:
+    async with DummyStreamMonitor(
+        out_bus, dut.clk, reset=rst, name="post_rst_mon"
+    ) as mon:
         await drv_flush.send(DummyStreamTx(data=0x44, last=1))
         got = await mon.recv()
         assert got == DummyStreamTx(data=0x44 ^ 0x5A, last=1)
@@ -223,8 +235,12 @@ async def test_explicit_lifecycle_and_reset_flush_and_pause(dut: HierarchyObject
 
 
 @cocotb.test()
-async def test_cocotbext_adapter_and_legacy_scoreboard_interop(dut: HierarchyObject) -> None:
-    """Verify `AsyncSourceAdapter` (cocotbext sink style) and legacy `add_callback` interop."""
+async def test_cocotbext_adapter_and_legacy_scoreboard_interop(
+    dut: HierarchyObject,
+) -> None:
+    """Verify `AsyncSourceAdapter` (cocotbext sink style) and legacy `add_callback`
+    interop.
+    """
     await _init_dut(dut)
 
     in_bus = DummyStreamBus.from_interface(dut.if_in)
@@ -256,12 +272,17 @@ async def test_cocotbext_adapter_and_legacy_scoreboard_interop(dut: HierarchyObj
     ):
         sink = FakeCocotbextSink(mon)
         adapter = AsyncSourceAdapter.from_sink(sink, name="ext_sink")
-        legacy_expected = [DummyStreamTx(data=0x0F ^ 0x5A), DummyStreamTx(data=0xF0 ^ 0x5A)]
+        legacy_expected = [
+            DummyStreamTx(data=0x0F ^ 0x5A),
+            DummyStreamTx(data=0xF0 ^ 0x5A),
+        ]
         LegacyScoreboardContract().add_interface(mon, legacy_expected)
 
         async with adapter, Scoreboard(name="adapter_sb") as sb:
             ch = sb.add_channel("ext", adapter)
-            ch.expect_many([DummyStreamTx(data=0x0F ^ 0x5A), DummyStreamTx(data=0xF0 ^ 0x5A)])
+            ch.expect_many(
+                [DummyStreamTx(data=0x0F ^ 0x5A), DummyStreamTx(data=0xF0 ^ 0x5A)]
+            )
 
             await drv.send(DummyStreamTx(data=0x0F))
             await drv.send(DummyStreamTx(data=0xF0))

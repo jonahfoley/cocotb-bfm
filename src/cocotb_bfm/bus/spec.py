@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from cocotb_bfm.bus.base import Bus
 
 VectorObject: TypeAlias = LogicArrayObject | PackedObject[Any]
-"""Cross-version (cocotb 2.0/2.1+) and cross-language (SV/VHDL) packed vector handle type."""
+"""Cross-version (cocotb 2.0/2.1+) and cross-language packed vector handle type."""
 
 
 class _MissingType:
@@ -37,7 +37,7 @@ class Direction(Enum):
     UNSPECIFIED = "unspecified"
 
     def is_driven_by(self, role: Role) -> bool:
-        """Return ``True`` if a component with ``role`` is permitted to drive this signal."""
+        """Return ``True`` if a component with ``role`` may drive this signal."""
         match (role, self):
             case (Role.OBSERVER, _):
                 return False
@@ -165,7 +165,7 @@ def signal(
             for optional signals). Omit for required signals.
         hdl_name: Explicit HDL signal name if it differs from the Python attribute name.
         aliases: Additional fallback HDL signal names to try during resolution.
-        direction: Ownership direction (:class:`Direction`) relative to initiator/target.
+        direction: Ownership :class:`Direction` relative to initiator/target.
         width: Exact required bit width (validated at bind time when provided).
         min_width: Minimum allowed bit width (validated at bind time when provided).
         max_width: Maximum allowed bit width (validated at bind time when provided).

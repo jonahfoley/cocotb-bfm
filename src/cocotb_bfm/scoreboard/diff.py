@@ -26,7 +26,9 @@ def format_value(value: Any) -> str:
         case bool():
             return repr(value)
         case int():
-            return f"{value} (0x{value:x})" if value >= 16 or value <= -16 else str(value)
+            return (
+                f"{value} (0x{value:x})" if value >= 16 or value <= -16 else str(value)
+            )
         case _:
             return repr(value)
 
@@ -55,9 +57,12 @@ def format_diff(expected: Any, actual: Any) -> str:
             lines: list[str] = []
             for key in all_keys:
                 if key not in act_map:
-                    lines.append(f"  [{key!r}]: missing (expected {format_value(exp_map[key])})")
+                    lines.append(
+                        f"  [{key!r}]: missing (expected {format_value(exp_map[key])})"
+                    )
                 elif key not in exp_map:
-                    lines.append(f"  [{key!r}]: unexpected key (got {format_value(act_map[key])})")
+                    act_s = format_value(act_map[key])
+                    lines.append(f"  [{key!r}]: unexpected key (got {act_s})")
                 elif exp_map[key] != act_map[key]:
                     lines.append(
                         f"  [{key!r}]: expected {format_value(exp_map[key])}, "

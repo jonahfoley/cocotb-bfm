@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Static Type Check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --extra dev --python 3.11
+
+      - name: Ruff lint
+        run: uv run ruff check src examples tests
+
+      - name: Ruff format check
+        run: uv run ruff format --check src examples tests
+
+      - name: Mypy strict type check
+        run: uv run mypy src/cocotb_bfm examples tests/typing
+
+  unit-tests:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev --python ${{ matrix.python-version }}
+
+      - name: Run unit test suite
+        run: uv run pytest -v tests/unit
+
+  verilator-tests-and-examples:
+    name: Verilator RTL Tests & Examples (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install Verilator build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make g++
+
+      - name: Set up Verilator 5.036
+        uses: veryl-lang/setup-verilator@v2
+        with:
+          version: "5.036"
+
+      - name: Check Verilator version
+        run: verilator --version
+
+      - name: Install dependencies
+        run: uv sync --extra dev --python ${{ matrix.python-version }}
+
+      - name: Run Verilator RTL integration test suite
+        run: uv run pytest -v -m rtl tests/rtl
+
+      - name: Run Avalon-MM CSR example
+        run: uv run python examples/avalon_mm_csr/run_example.py
+
+      - name: Run legacy cocotb-bus interop example (standalone)
+        run: uv run python examples/legacy_cocotb_bus_interop/run_example.py
+
+      - name: Run legacy cocotb-bus interop example (with cocotb-bus installed)
+        run: |
+          uv pip install "cocotb-bus>=0.3.0"
+          uv run python examples/legacy_cocotb_bus_interop/run_example.py

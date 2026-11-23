@@ -56,7 +56,9 @@ def test_in_order_scoreboard_pass_and_mismatch() -> None:
     ch.expect_many([TaggedTx(0, 10), TaggedTx(1, 20)])
 
     mon.emit(TaggedTx(0, 10))
-    with pytest.raises(ScoreboardError, match=r"\.payload: expected 20 \(0x14\), got 99 \(0x63\)"):
+    with pytest.raises(
+        ScoreboardError, match=r"\.payload: expected 20 \(0x14\), got 99 \(0x63\)"
+    ):
         mon.emit(TaggedTx(1, 99))
 
 
@@ -99,7 +101,9 @@ def test_unordered_matcher_and_pending_failure() -> None:
     ch.expect_many(["a", "b", "c"])
     ch.check("c")
     ch.check("a")
-    with pytest.raises(ScoreboardError, match="1 expected transaction\\(s\\) never received"):
+    with pytest.raises(
+        ScoreboardError, match="1 expected transaction\\(s\\) never received"
+    ):
         sb.assert_clean()
 
 
@@ -135,7 +139,7 @@ def test_format_diff_with_logic_array_and_x_bits() -> None:
 
 
 def test_legacy_cocotb_bus_scoreboard_contract() -> None:
-    """Verify our monitor contract works with legacy cocotb_bus.Scoreboard.add_interface."""
+    """Verify monitor contract works with legacy Scoreboard.add_interface."""
 
     class LegacyScoreboardMock:
         """Mirrors the exact monitor interaction in cocotb_bus.scoreboard.Scoreboard."""

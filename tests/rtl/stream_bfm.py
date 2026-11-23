@@ -15,8 +15,12 @@ class DummyStreamBus(Bus):
 
     valid: LogicObject = signal(direction=Direction.INITIATOR, idle_value=0)
     data: LogicArrayObject = signal(direction=Direction.INITIATOR, idle_value=0)
-    ready: LogicObject | None = signal(default=None, direction=Direction.TARGET, idle_value=1)
-    last: LogicObject | None = signal(default=None, direction=Direction.INITIATOR, idle_value=0)
+    ready: LogicObject | None = signal(
+        default=None, direction=Direction.TARGET, idle_value=1
+    )
+    last: LogicObject | None = signal(
+        default=None, direction=Direction.INITIATOR, idle_value=0
+    )
 
 
 class OneBitFlagBus(Bus):

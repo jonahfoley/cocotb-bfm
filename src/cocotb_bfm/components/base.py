@@ -16,7 +16,8 @@ from cocotb_bfm.exceptions import ComponentLifecycleError
 
 
 class Component(ABC):
-    """Base class for verification components with explicit ``start()`` / ``stop()`` lifecycle.
+    """Base class for verification components with explicit ``start()`` / ``stop()``
+    lifecycle.
 
     Unlike legacy ``cocotb-bus`` components, :class:`Component` **never** spawns
     background tasks inside ``__init__``. Start components explicitly via
@@ -49,7 +50,9 @@ class Component(ABC):
             ComponentLifecycleError: If the component is already running.
         """
         if self.running:
-            raise ComponentLifecycleError(f"Component '{self._name}' is already running")
+            raise ComponentLifecycleError(
+                f"Component '{self._name}' is already running"
+            )
         self._stopping = False
         self._task = cocotb.start_soon(self._run_wrapper())
         return self

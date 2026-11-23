@@ -1,4 +1,4 @@
-"""Pytest harness running real Verilator 5 + cocotb 2.0 SystemVerilog integration tests."""
+"""Pytest harness for Verilator 5 + cocotb 2.0 SystemVerilog integration tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ RTL_DIR = Path(__file__).parent / "hdl"
 
 
 @pytest.mark.rtl
-@pytest.mark.skipif(shutil.which("verilator") is None, reason="verilator binary not found")
+@pytest.mark.skipif(
+    shutil.which("verilator") is None, reason="verilator binary not found"
+)
 def test_verilator_sv_interface_and_bfm_suite(tmp_path: Path) -> None:
     runner = get_runner("verilator")
     build_dir = tmp_path / "sim_build"

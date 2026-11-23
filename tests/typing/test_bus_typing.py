@@ -10,7 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, assert_type
 
-from cocotb.handle import HierarchyArrayObject, HierarchyObject, LogicArrayObject, LogicObject
+from cocotb.handle import (
+    HierarchyArrayObject,
+    HierarchyObject,
+    LogicArrayObject,
+    LogicObject,
+)
 
 from cocotb_bfm import (
     Bus,

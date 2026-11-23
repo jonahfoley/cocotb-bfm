@@ -1,4 +1,4 @@
-"""Generic, composable, reset-aware ``Monitor`` base class with legacy scoreboard interop."""
+"""Generic, composable, reset-aware ``Monitor`` with legacy scoreboard interop."""
 
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ TxT_co = TypeVar("TxT_co", covariant=True)
 
 @runtime_checkable
 class MonitorProtocol(Protocol[TxT_co]):
-    """Structural protocol satisfied by :class:`Monitor` and legacy ``cocotb-bus`` monitors.
+    """Structural protocol satisfied by :class:`Monitor` and legacy ``cocotb-bus``
+    monitors.
 
     Implementing ``add_callback`` allows :class:`Monitor` instances to plug directly
     into legacy ``cocotb_bus.scoreboard.Scoreboard.add_interface()`` as well as the
@@ -142,7 +143,9 @@ class Monitor(Component, Generic[BusT, TxT]):
 
     @abstractmethod
     async def _monitor_loop(self) -> None:
-        """Continuously observe ``self.bus`` and call ``self._emit(tx)`` for each transaction."""
+        """Continuously observe ``self.bus`` and call ``self._emit(tx)`` for each
+        transaction.
+        """
 
     async def _on_reset(self) -> None:
         """Optional hook invoked when reset asserts and aborts any partial capture."""

@@ -1,4 +1,4 @@
-"""Pytest harness running the Avalon-MM CSR SV interface & async reset Verilator suite."""
+"""Pytest harness for Avalon-MM CSR SV interface & async reset Verilator suite."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ AVALON_SV = REPO_ROOT / "examples" / "avalon_mm_csr" / "avalon_csr_dut.sv"
 
 
 @pytest.mark.rtl
-@pytest.mark.skipif(shutil.which("verilator") is None, reason="verilator binary not found")
+@pytest.mark.skipif(
+    shutil.which("verilator") is None, reason="verilator binary not found"
+)
 def test_verilator_avalon_mm_csr_end_to_end(tmp_path: Path) -> None:
     runner = get_runner("verilator")
     build_dir = tmp_path / "sim_build"

@@ -74,7 +74,10 @@ class InOrderMatcher(Matcher[TxT]):
                 matched=False,
                 expected=None,
                 actual=actual,
-                detail=f"Unexpected transaction (expected queue empty): {format_value(actual)}",
+                detail=(
+                    f"Unexpected transaction (expected queue empty): "
+                    f"{format_value(actual)}"
+                ),
             )
         expected = self._expected.popleft()
         if self._compare(expected, actual):
@@ -97,7 +100,8 @@ class InOrderMatcher(Matcher[TxT]):
 
 
 class WindowMatcher(Matcher[TxT]):
-    """Bounded out-of-order matcher searching up to ``depth`` items ahead in the expected queue.
+    """Bounded out-of-order matcher searching up to ``depth`` items ahead in the
+    expected queue.
 
     ``depth=0`` behaves identically to :class:`InOrderMatcher`; ``depth=N`` searches
     the first ``N + 1`` expected transactions and removes the earliest matching item.
@@ -126,7 +130,10 @@ class WindowMatcher(Matcher[TxT]):
                 matched=False,
                 expected=None,
                 actual=actual,
-                detail=f"Unexpected transaction (expected queue empty): {format_value(actual)}",
+                detail=(
+                    f"Unexpected transaction (expected queue empty): "
+                    f"{format_value(actual)}"
+                ),
             )
         limit = min(self.depth + 1, len(self._expected))
         for idx in range(limit):
@@ -242,8 +249,8 @@ class UnorderedMatcher(Matcher[TxT]):
             expected=self._expected[0] if self._expected else None,
             actual=actual,
             detail=(
-                f"No matching expected transaction among {len(self._expected)} pending item(s): "
-                f"got {format_value(actual)}"
+                f"No matching expected transaction among {len(self._expected)} "
+                f"pending item(s): got {format_value(actual)}"
             ),
         )
 

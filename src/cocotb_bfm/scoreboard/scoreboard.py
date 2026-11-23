@@ -1,4 +1,4 @@
-"""Modern generic ``Scoreboard`` with pluggable matchers, model wiring, and clean teardown."""
+"""Generic ``Scoreboard`` with pluggable matchers, model wiring, and teardown checks."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ OutT = TypeVar("OutT")
 
 
 def _try_sim_time_ns() -> float | None:
-    """Return current simulation time in nanoseconds, or ``None`` outside a simulator."""
+    """Return current sim time in nanoseconds, or ``None`` outside a simulator."""
     try:
         from cocotb.utils import get_sim_time
 
@@ -56,10 +56,14 @@ class Channel(Generic[TxT]):
         log: logging.Logger | None = None,
     ) -> None:
         self.name: str = name
-        self.matcher: Matcher[TxT] = matcher if matcher is not None else InOrderMatcher()
+        self.matcher: Matcher[TxT] = (
+            matcher if matcher is not None else InOrderMatcher()
+        )
         self.fail_immediately: bool = fail_immediately
         self.log: logging.Logger = (
-            log if log is not None else logging.getLogger(f"cocotb_bfm.scoreboard.{name}")
+            log
+            if log is not None
+            else logging.getLogger(f"cocotb_bfm.scoreboard.{name}")
         )
         self._received_count: int = 0
         self._matched_count: int = 0
@@ -125,7 +129,8 @@ class Channel(Generic[TxT]):
 
 
 class Scoreboard:
-    """Multi-channel typed scoreboard with pluggable matchers and automatic teardown checks.
+    """Multi-channel typed scoreboard with pluggable matchers and automatic teardown
+    checks.
 
     Use as an async context manager to guarantee undrained expected transactions and
     deferred mismatches are always checked when a test finishes::
@@ -164,8 +169,12 @@ class Scoreboard:
     ) -> Channel[TxT]:
         """Register a new typed verification channel and optionally attach a monitor."""
         if name in self._channels:
-            raise ValueError(f"Scoreboard '{self.name}' already has a channel named {name!r}")
-        effective_fail = self.fail_immediately if fail_immediately is None else fail_immediately
+            raise ValueError(
+                f"Scoreboard '{self.name}' already has a channel named {name!r}"
+            )
+        effective_fail = (
+            self.fail_immediately if fail_immediately is None else fail_immediately
+        )
         channel: Channel[TxT] = Channel(
             name=name,
             matcher=matcher,
@@ -189,11 +198,13 @@ class Scoreboard:
         *,
         expand_iterables: bool = False,
     ) -> Callable[[InT], None]:
-        """Wire an ingress monitor through a reference model function into a target channel.
+        """Wire an ingress monitor through a reference model function into a target
+        channel.
 
         Args:
             source_monitor: Passive monitor observing DUT inputs.
-            model: Pure reference model returning an expected output transaction, ``None``
+            model: Pure reference model returning an expected output transaction,
+            ``None``
                 (if the input produces no output), or—when ``expand_iterables=True``—an
                 iterable of output transactions.
             target: Target channel name or :class:`Channel` instance.
@@ -226,13 +237,16 @@ class Scoreboard:
         lines = [f"Scoreboard '{self.name}' summary:"]
         for ch in self._channels.values():
             lines.append(
-                f"  - {ch.name}: received={ch.received_count}, matched={ch.matched_count}, "
+                f"  - {ch.name}: received={ch.received_count}, "
+                f"matched={ch.matched_count}, "
                 f"mismatches={len(ch.mismatches)}, pending={ch.pending_count}"
             )
         return "\n".join(lines)
 
     def assert_clean(self, *, allow_pending: bool = False) -> None:
-        """Raise :class:`ScoreboardError` if any mismatch occurred or expected items remain."""
+        """Raise :class:`ScoreboardError` if any mismatch occurred or expected items
+        remain.
+        """
         errors: list[str] = []
         for ch in self._channels.values():
             for mismatch in ch.mismatches:
@@ -242,8 +256,8 @@ class Scoreboard:
                 preview = ", ".join(format_value(item) for item in pending[:5])
                 more = f" (+{len(pending) - 5} more)" if len(pending) > 5 else ""
                 errors.append(
-                    f"[{ch.name}] {ch.pending_count} expected transaction(s) never received: "
-                    f"[{preview}{more}]"
+                    f"[{ch.name}] {ch.pending_count} expected transaction(s) "
+                    f"never received: [{preview}{more}]"
                 )
         if errors:
             raise ScoreboardError(

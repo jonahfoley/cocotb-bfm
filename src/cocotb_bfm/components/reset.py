@@ -14,10 +14,12 @@ class ResetPolicy(Enum):
     """Behavior of a :class:`Driver` when reset asserts during or between transfers."""
 
     FLUSH = "flush"
-    """Cancel the in-flight transfer, drive idle values, and discard queued transactions."""
+    """Cancel the in-flight transfer, drive idle, and discard queued transactions."""
 
     PAUSE = "pause"
-    """Cancel the in-flight transfer, drive idle values, and retry it after reset deasserts."""
+    """Cancel the in-flight transfer, drive idle values, and retry it after reset
+    deasserts.
+    """
 
 
 def _logic_is_high(value: Any, *, treat_x_as_active: bool, active_low: bool) -> bool:
@@ -39,7 +41,8 @@ def _logic_is_high(value: Any, *, treat_x_as_active: bool, active_low: bool) -> 
 
 @dataclass(frozen=True, slots=True)
 class Reset:
-    """Declarative reset signal descriptor supporting active-high/low and sync/async resets.
+    """Declarative reset signal descriptor supporting active-high/low and sync/async
+    resets.
 
     Args:
         signal: Reset signal handle (``LogicObject`` or 1-bit ``LogicArrayObject``).
