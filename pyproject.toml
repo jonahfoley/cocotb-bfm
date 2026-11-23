@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cocotb-bfm"
+version = "0.1.0"
+description = "Modern, statically typed Bus, Driver, Monitor, and Scoreboard primitives for cocotb 2.0+ with first-class SystemVerilog interface support."
+readme = "README.md"
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.11"
+authors = [
+    { name = "cocotb-bfm contributors" },
+]
+keywords = [
+    "cocotb",
+    "bfm",
+    "verification",
+    "systemverilog",
+    "rtl",
+    "hardware",
+    "bus",
+    "scoreboard",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Typing :: Typed",
+]
+dependencies = [
+    "cocotb>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "mypy>=1.11.0",
+    "pyright>=1.1.380",
+    "ruff>=0.6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cocotb_bfm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "rtl: tests requiring an RTL simulator (e.g. Verilator) via cocotb_tools.runner",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+warn_unreachable = true
+show_error_codes = true
+mypy_path = "src"
+packages = ["cocotb_bfm"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "RUF",
+    "ANN",
+]
+ignore = [
+    "ANN401",  # Dynamically typed expressions (Any) are occasionally needed in generic helpers
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
