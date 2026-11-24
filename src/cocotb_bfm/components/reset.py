@@ -54,8 +54,7 @@ def _unwrap_scalar_handle(handle: Any) -> LogicObject:
 
 @dataclass(frozen=True, slots=True)
 class Reset:
-    """Declarative reset signal descriptor supporting active-high/low and sync/async
-    resets.
+    """Declarative reset descriptor for active-high/low and sync/async resets.
 
     Args:
         signal: Reset signal handle (``LogicObject`` or 1-bit vector handle).

@@ -158,6 +158,7 @@ class PackedStruct:
         cls._total_width = total
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Construct an immutable packed struct and range-check every bitfield."""
         specs = self._bitfields
         if len(args) > len(specs):
             cls_name = type(self).__name__

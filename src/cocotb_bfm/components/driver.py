@@ -28,6 +28,7 @@ class TxHandle(Generic[TxT, RespT]):
     """Awaitable handle returned by ``Driver.enqueue`` or ``RequestDriver``."""
 
     def __init__(self, transaction: TxT) -> None:
+        """Create a pending handle tracking ``transaction``."""
         self.transaction: TxT = transaction
         self._event: Event = Event()
         self._done: bool = False
@@ -79,6 +80,18 @@ class _DriverEngine(Component, Generic[BusT, ReqT, RespT]):
         max_queue_size: int = 0,
         reset_policy: ResetPolicy = ResetPolicy.FLUSH,
     ) -> None:
+        """Initialize a driver bound to an externally owned ``bus``.
+
+        Args:
+            bus: Typed :class:`~cocotb_bfm.Bus` instance driven by this component.
+            clock: Clock handle used to synchronize transfers and synchronous resets.
+            reset: Optional :class:`~cocotb_bfm.Reset` descriptor for reset handling.
+            role: Bus role (:class:`~cocotb_bfm.Role`) used when driving idle values.
+            name: Optional human-readable component name for logging.
+            max_queue_size: Maximum queued transactions (``0`` for unbounded).
+            reset_policy: Behavior when reset asserts (:attr:`ResetPolicy.FLUSH` or
+                :attr:`ResetPolicy.PAUSE`).
+        """
         super().__init__(name=name)
         self.bus: BusT = bus
         self.clock: LogicObject = clock

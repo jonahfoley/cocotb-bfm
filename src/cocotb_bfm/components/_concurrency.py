@@ -16,8 +16,7 @@ async def race(
     first_coro: Coroutine[Any, Any, Any],
     second_coro: Coroutine[Any, Any, Any],
 ) -> tuple[int, Any]:
-    """Race two coroutines, cancelling the loser and returning ``(winner_index,
-    result)``.
+    """Race two coroutines, cancel the loser, and return ``(winner_idx, result)``.
 
     Uses ``cocotb.triggers.select`` natively on cocotb 2.1+ (avoiding ``First(Task)``
     deprecation warnings) and falls back cleanly to ``First`` on cocotb 2.0.x.

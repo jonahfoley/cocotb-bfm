@@ -28,9 +28,7 @@ def handle_path(handle: Any) -> str:
 
 
 def handle_width(handle: Any) -> int | None:
-    """Return the bit/element width of ``handle``, or ``None`` if unsized or a hierarchy
-    scope.
-    """
+    """Return the bit/element width of ``handle``, or ``None`` if unsized."""
     match handle:
         case LogicObject():
             return 1

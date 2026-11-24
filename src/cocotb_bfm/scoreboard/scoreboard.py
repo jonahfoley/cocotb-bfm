@@ -40,6 +40,7 @@ class MismatchRecord:
     detail: str
 
     def format(self) -> str:
+        """Render a single-line human-readable summary of this mismatch."""
         time_str = f" @ {self.sim_time_ns:g} ns" if self.sim_time_ns is not None else ""
         return f"[{self.channel} #{self.tx_index}{time_str}] {self.detail}"
 
@@ -55,6 +56,7 @@ class Channel(Generic[TxT]):
         fail_immediately: bool = True,
         log: logging.Logger | None = None,
     ) -> None:
+        """Initialize a scoreboard channel with its matching strategy."""
         self.name: str = name
         self.matcher: Matcher[TxT] = (
             matcher if matcher is not None else InOrderMatcher()
@@ -71,18 +73,22 @@ class Channel(Generic[TxT]):
 
     @property
     def received_count(self) -> int:
+        """Total number of transactions observed on this channel."""
         return self._received_count
 
     @property
     def matched_count(self) -> int:
+        """Number of observed transactions that matched expectations."""
         return self._matched_count
 
     @property
     def pending_count(self) -> int:
+        """Number of expected transactions not yet observed."""
         return self.matcher.pending_count()
 
     @property
     def mismatches(self) -> tuple[MismatchRecord, ...]:
+        """Immutable tuple of all mismatch records captured on this channel."""
         return tuple(self._mismatches)
 
     def expect(self, transaction: TxT) -> None:
@@ -129,8 +135,7 @@ class Channel(Generic[TxT]):
 
 
 class Scoreboard:
-    """Multi-channel typed scoreboard with pluggable matchers and automatic teardown
-    checks.
+    """Multi-channel typed scoreboard with pluggable matchers and teardown checks.
 
     Use as an async context manager to guarantee undrained expected transactions and
     deferred mismatches are always checked when a test finishes::
@@ -148,6 +153,15 @@ class Scoreboard:
         fail_immediately: bool = True,
         allow_pending_on_exit: bool = False,
     ) -> None:
+        """Initialize a scoreboard.
+
+        Args:
+            name: Human-readable scoreboard name used in logs and error reports.
+            fail_immediately: Raise :class:`ScoreboardError` on the first mismatch if
+                ``True``; otherwise collect mismatches until :meth:`assert_clean`.
+            allow_pending_on_exit: When ``True``, ``async with`` exit ignores remaining
+                unmatched expected items.
+        """
         self.name: str = name
         self.fail_immediately: bool = fail_immediately
         self.allow_pending_on_exit: bool = allow_pending_on_exit
@@ -198,8 +212,7 @@ class Scoreboard:
         *,
         expand_iterables: bool = False,
     ) -> Callable[[InT], None]:
-        """Wire an ingress monitor through a reference model function into a target
-        channel.
+        """Wire an ingress monitor through a reference model into a target channel.
 
         Args:
             source_monitor: Passive monitor observing DUT inputs.
@@ -247,9 +260,7 @@ class Scoreboard:
         return "\n".join(lines)
 
     def assert_clean(self, *, allow_pending: bool = False) -> None:
-        """Raise :class:`ScoreboardError` if any mismatch occurred or expected items
-        remain.
-        """
+        """Raise :class:`ScoreboardError` on any mismatch or pending items."""
         errors: list[str] = []
         for ch in self._channels.values():
             for mismatch in ch.mismatches:

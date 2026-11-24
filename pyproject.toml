@@ -80,10 +80,16 @@ select = [
     "SIM",
     "RUF",
     "ANN",
+    "D",
 ]
 ignore = [
     "ANN401",  # Dynamically typed expressions (Any) are occasionally needed in generic helpers
+    "D105",    # Magic methods (__repr__, __len__, __aenter__, etc.) follow standard protocols
 ]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN"]
+"tests/**" = ["ANN", "D"]
+"examples/**" = ["D"]

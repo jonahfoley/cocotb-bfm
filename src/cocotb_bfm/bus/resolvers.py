@@ -211,6 +211,7 @@ class InterfaceResolver(SignalResolver):
         case_insensitive: bool = False,
         flat_sub_bus_separators: Sequence[str] = ("_", ""),
     ) -> None:
+        """Initialize an interface/scope resolver."""
         self.case_insensitive = case_insensitive
         self.flat_sub_bus_separators = tuple(flat_sub_bus_separators)
 
@@ -219,6 +220,7 @@ class InterfaceResolver(SignalResolver):
         scope: Any,
         spec: SignalSpec,
     ) -> tuple[Any | None, tuple[str, ...]]:
+        """Resolve a signal directly by candidate name on ``scope``."""
         attempted: list[str] = []
         for candidate in spec.candidate_names:
             attempted.append(candidate)
@@ -234,6 +236,7 @@ class InterfaceResolver(SignalResolver):
         scope: Any,
         spec: SubBusSpec,
     ) -> SubBusResolution | None:
+        """Resolve a nested sub-bus scope or fall back to flat prefixed signals."""
         # 1. Try nested interface / hierarchy scope (e.g., axi_if.aw).
         for candidate in spec.candidate_names:
             child = lookup_child(
@@ -278,6 +281,7 @@ class PrefixResolver(SignalResolver):
         suffix: str = "",
         case_insensitive: bool = False,
     ) -> None:
+        """Initialize a prefix/suffix naming resolver."""
         self.prefix = prefix
         self.separator = separator
         self.suffix = suffix
@@ -293,6 +297,7 @@ class PrefixResolver(SignalResolver):
         scope: Any,
         spec: SignalSpec,
     ) -> tuple[Any | None, tuple[str, ...]]:
+        """Resolve a signal using ``<prefix><separator><candidate><suffix>``."""
         attempted: list[str] = []
         for candidate in spec.candidate_names:
             full_name = self._build_name(candidate)
@@ -309,6 +314,7 @@ class PrefixResolver(SignalResolver):
         scope: Any,
         spec: SubBusSpec,
     ) -> SubBusResolution | None:
+        """Resolve a flat prefixed sub-bus under ``scope``."""
         sep = self.separator if spec.separator is None else spec.separator
         resolvers: list[SignalResolver] = []
         for candidate in spec.candidate_names:
@@ -358,6 +364,7 @@ class MappingResolver(SignalResolver):
         *,
         case_insensitive: bool = False,
     ) -> None:
+        """Initialize an explicit attribute-to-path/handle mapping resolver."""
         self.mapping = dict(mapping)
         self.case_insensitive = case_insensitive
 
@@ -366,6 +373,7 @@ class MappingResolver(SignalResolver):
         scope: Any,
         spec: SignalSpec,
     ) -> tuple[Any | None, tuple[str, ...]]:
+        """Resolve ``spec`` from the explicit mapping."""
         if spec.attr_name not in self.mapping:
             return None, ()
         match self.mapping[spec.attr_name]:
@@ -384,6 +392,7 @@ class MappingResolver(SignalResolver):
         scope: Any,
         spec: SubBusSpec,
     ) -> SubBusResolution | None:
+        """Resolve a sub-bus from a nested dict, path string, or scope handle."""
         if spec.attr_name not in self.mapping:
             return None
         match self.mapping[spec.attr_name]:
@@ -438,6 +447,7 @@ class RegexResolver(SignalResolver):
         *,
         case_insensitive: bool = False,
     ) -> None:
+        """Initialize a regex-based signal resolver."""
         flags = re.IGNORECASE if case_insensitive else 0
         match pattern:
             case str():
@@ -468,6 +478,7 @@ class RegexResolver(SignalResolver):
         scope: Any,
         spec: SignalSpec,
     ) -> tuple[Any | None, tuple[str, ...]]:
+        """Resolve ``spec`` by matching ``scope`` keys against ``self.pattern``."""
         index = self._build_index(scope)
         attempted: list[str] = []
         for candidate in spec.candidate_names:
@@ -487,6 +498,7 @@ class CompositeResolver(SignalResolver):
     """Try multiple resolvers in order, returning the first match."""
 
     def __init__(self, resolvers: Sequence[SignalResolver]) -> None:
+        """Initialize a composite resolver trying ``resolvers`` in order."""
         self.resolvers = tuple(resolvers)
 
     def resolve_signal(
@@ -494,6 +506,7 @@ class CompositeResolver(SignalResolver):
         scope: Any,
         spec: SignalSpec,
     ) -> tuple[Any | None, tuple[str, ...]]:
+        """Return the first signal match across child resolvers."""
         attempted: list[str] = []
         for resolver in self.resolvers:
             handle, tried = resolver.resolve_signal(scope, spec)
@@ -507,6 +520,7 @@ class CompositeResolver(SignalResolver):
         scope: Any,
         spec: SubBusSpec,
     ) -> SubBusResolution | None:
+        """Return the first sub-bus resolution across child resolvers."""
         for resolver in self.resolvers:
             result = resolver.resolve_sub_bus(scope, spec)
             if result is not None:

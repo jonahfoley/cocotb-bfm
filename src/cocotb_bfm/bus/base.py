@@ -264,6 +264,7 @@ class Bus:
         cls._sub_bus_specs = sub_bus_specs
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Bind signal and sub-bus handles directly and validate types and widths."""
         strict_types = bool(kwargs.pop("_strict_types", False))
         field_order = self._field_order
         if len(args) > len(field_order):
@@ -504,9 +505,7 @@ class Bus:
         strict_types: bool = False,
         overrides: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Bind to flat signals named ``<prefix><separator><signal><suffix>`` on
-        ``entity``.
-        """
+        """Bind flat ``<prefix><separator><signal><suffix>`` signals on ``entity``."""
         base: SignalResolver = PrefixResolver(
             prefix=prefix,
             separator=separator,
@@ -531,9 +530,7 @@ class Bus:
         strict_types: bool = False,
         overrides: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Bind directly to unprefixed signals on ``entity`` (alias for
-        ``from_interface``).
-        """
+        """Bind directly to unprefixed signals on ``entity`` (``from_interface``)."""
         return cls.from_interface(
             entity,
             case_insensitive=case_insensitive,

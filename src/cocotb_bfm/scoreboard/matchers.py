@@ -60,15 +60,18 @@ class InOrderMatcher(Matcher[TxT]):
         *,
         compare: Callable[[TxT, TxT], bool] | None = None,
     ) -> None:
+        """Initialize an in-order matcher with an optional custom comparator."""
         self._compare: Callable[[TxT, TxT], bool] = (
             compare if compare is not None else _default_compare
         )
         self._expected: deque[TxT] = deque()
 
     def expect(self, transaction: TxT) -> None:
+        """Append ``transaction`` to the FIFO expected queue."""
         self._expected.append(transaction)
 
     def match(self, actual: TxT) -> MatchResult[TxT]:
+        """Compare ``actual`` against the oldest expected transaction."""
         if not self._expected:
             return MatchResult(
                 matched=False,
@@ -90,18 +93,20 @@ class InOrderMatcher(Matcher[TxT]):
         )
 
     def pending_count(self) -> int:
+        """Return the number of unmatched expected transactions."""
         return len(self._expected)
 
     def pending_items(self) -> list[TxT]:
+        """Return a snapshot of unmatched expected transactions."""
         return list(self._expected)
 
     def clear(self) -> None:
+        """Discard all pending expected transactions."""
         self._expected.clear()
 
 
 class WindowMatcher(Matcher[TxT]):
-    """Bounded out-of-order matcher searching up to ``depth`` items ahead in the
-    expected queue.
+    """Bounded out-of-order matcher searching up to ``depth`` items ahead.
 
     ``depth=0`` behaves identically to :class:`InOrderMatcher`; ``depth=N`` searches
     the first ``N + 1`` expected transactions and removes the earliest matching item.
@@ -113,6 +118,7 @@ class WindowMatcher(Matcher[TxT]):
         *,
         compare: Callable[[TxT, TxT], bool] | None = None,
     ) -> None:
+        """Initialize a reorder-window matcher with lookahead ``depth``."""
         if depth < 0:
             raise ValueError(f"WindowMatcher depth must be >= 0, got {depth}")
         self.depth = depth
@@ -122,9 +128,11 @@ class WindowMatcher(Matcher[TxT]):
         self._expected: deque[TxT] = deque()
 
     def expect(self, transaction: TxT) -> None:
+        """Append ``transaction`` to the expected queue."""
         self._expected.append(transaction)
 
     def match(self, actual: TxT) -> MatchResult[TxT]:
+        """Match ``actual`` against the first ``depth + 1`` expected items."""
         if not self._expected:
             return MatchResult(
                 matched=False,
@@ -154,12 +162,15 @@ class WindowMatcher(Matcher[TxT]):
         )
 
     def pending_count(self) -> int:
+        """Return the number of unmatched expected transactions."""
         return len(self._expected)
 
     def pending_items(self) -> list[TxT]:
+        """Return a snapshot of unmatched expected transactions."""
         return list(self._expected)
 
     def clear(self) -> None:
+        """Discard all pending expected transactions."""
         self._expected.clear()
 
 
@@ -176,6 +187,7 @@ class KeyedMatcher(Matcher[TxT], Generic[TxT, KeyT]):
         *,
         compare: Callable[[TxT, TxT], bool] | None = None,
     ) -> None:
+        """Initialize a per-key FIFO matcher keyed by ``key(tx)``."""
         self._key = key
         self._compare: Callable[[TxT, TxT], bool] = (
             compare if compare is not None else _default_compare
@@ -183,9 +195,11 @@ class KeyedMatcher(Matcher[TxT], Generic[TxT, KeyT]):
         self._queues: dict[KeyT, deque[TxT]] = defaultdict(deque)
 
     def expect(self, transaction: TxT) -> None:
+        """Append ``transaction`` to the FIFO queue for ``key(transaction)``."""
         self._queues[self._key(transaction)].append(transaction)
 
     def match(self, actual: TxT) -> MatchResult[TxT]:
+        """Compare ``actual`` against the oldest expected item for ``key(actual)``."""
         tx_key = self._key(actual)
         bucket = self._queues.get(tx_key)
         if not bucket:
@@ -211,15 +225,18 @@ class KeyedMatcher(Matcher[TxT], Generic[TxT, KeyT]):
         )
 
     def pending_count(self) -> int:
+        """Return the total number of unmatched items across all keys."""
         return sum(len(q) for q in self._queues.values())
 
     def pending_items(self) -> list[TxT]:
+        """Return a flattened snapshot of unmatched items across all keys."""
         items: list[TxT] = []
         for q in self._queues.values():
             items.extend(q)
         return items
 
     def clear(self) -> None:
+        """Discard all pending queues across all keys."""
         self._queues.clear()
 
 
@@ -231,15 +248,18 @@ class UnorderedMatcher(Matcher[TxT]):
         *,
         compare: Callable[[TxT, TxT], bool] | None = None,
     ) -> None:
+        """Initialize an unordered matcher with an optional custom comparator."""
         self._compare: Callable[[TxT, TxT], bool] = (
             compare if compare is not None else _default_compare
         )
         self._expected: list[TxT] = []
 
     def expect(self, transaction: TxT) -> None:
+        """Add ``transaction`` to the expected multiset."""
         self._expected.append(transaction)
 
     def match(self, actual: TxT) -> MatchResult[TxT]:
+        """Remove and return the first expected item matching ``actual``."""
         for idx, candidate in enumerate(self._expected):
             if self._compare(candidate, actual):
                 self._expected.pop(idx)
@@ -255,10 +275,13 @@ class UnorderedMatcher(Matcher[TxT]):
         )
 
     def pending_count(self) -> int:
+        """Return the number of unmatched expected transactions."""
         return len(self._expected)
 
     def pending_items(self) -> list[TxT]:
+        """Return a snapshot of unmatched expected transactions."""
         return list(self._expected)
 
     def clear(self) -> None:
+        """Discard all pending expected transactions."""
         self._expected.clear()

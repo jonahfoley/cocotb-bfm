@@ -33,8 +33,7 @@ except ModuleNotFoundError:
 
 
 class AsyncSourceAdapter(Component, Generic[TxT]):
-    """Adapt any ``cocotbext-*`` async sink (``recv()``/``read()``) to
-    :class:`MonitorProtocol`.
+    """Adapt any ``cocotbext-*`` async sink (``recv()``/``read()``) to a monitor.
 
     Allows sinks from ``cocotbext-axi`` (``AxiStreamSink.recv``), ``cocotbext-uart``
     (``UartSink.read``), ``cocotbext-spi`` (``SpiMaster.read``), or any custom async
@@ -49,6 +48,13 @@ class AsyncSourceAdapter(Component, Generic[TxT]):
         name: str = "AsyncSourceAdapter",
         transform: Callable[[TxT], Any] | None = None,
     ) -> None:
+        """Initialize an adapter polling ``pull`` into registered callbacks.
+
+        Args:
+            pull: Zero-argument async callable returning the next transaction.
+            name: Human-readable component name for logging and scoreboards.
+            transform: Optional function transforming each pulled item before emission.
+        """
         super().__init__(name=name)
         self._pull = pull
         self._transform = transform
@@ -83,14 +89,17 @@ class AsyncSourceAdapter(Component, Generic[TxT]):
 
     @property
     def count(self) -> int:
+        """Total number of transactions forwarded by this adapter."""
         return self._count
 
     def add_callback(self, callback: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        """Register a sync or async callback invoked for every pulled item."""
         if callback not in self._callbacks:
             self._callbacks.append(callback)
         return callback
 
     def remove_callback(self, callback: Callable[[Any], Any]) -> None:
+        """Unregister a previously registered callback."""
         self._callbacks.remove(callback)
 
     def _enqueue_async_cb(self, awaitable: Awaitable[Any]) -> None:
@@ -138,13 +147,13 @@ class QueueAdapter(AsyncSourceAdapter[TxT]):
         name: str = "QueueAdapter",
         transform: Callable[[TxT], Any] | None = None,
     ) -> None:
+        """Initialize an adapter consuming items from ``queue``."""
         super().__init__(queue.get, name=name, transform=transform)
         self.queue = queue
 
 
 class LegacyBusShim(_RealCocotbBus):  # type: ignore[misc]
-    """Compatibility shim presenting a typed :class:`Bus` as a legacy ``cocotb-bus``
-    ``Bus``.
+    """Present a typed :class:`Bus` as a legacy ``cocotb_bus.bus.Bus``.
 
     - Subclasses ``cocotb_bus.bus.Bus`` when ``cocotb-bus`` is installed so
       ``isinstance(shim, cocotb_bus.bus.Bus)`` evaluates to ``True``.
@@ -158,6 +167,7 @@ class LegacyBusShim(_RealCocotbBus):  # type: ignore[misc]
     def __init__(
         self, bus: Bus, *, name: str | None = None, entity: Any = None
     ) -> None:
+        """Wrap ``bus`` without invoking ``cocotb_bus.bus.Bus.__init__``."""
         # Intentionally bypass cocotb_bus.bus.Bus.__init__ so handles come from `bus`.
         self._bus = bus
         self._name = name if name is not None else type(bus).__name__
@@ -200,8 +210,7 @@ class LegacyBusShim(_RealCocotbBus):  # type: ignore[misc]
 
 
 class LegacyMonitorShim(_RealCocotbMonitor):  # type: ignore[misc]
-    """Compatibility shim wrapping any :class:`MonitorProtocol` as a
-    ``cocotb_bus.monitors.Monitor``.
+    """Wrap any :class:`MonitorProtocol` as a ``cocotb_bus.monitors.Monitor``.
 
     Real ``cocotb_bus.scoreboard.Scoreboard.add_interface()`` performs an explicit
     ``isinstance(monitor, cocotb_bus.monitors.Monitor)`` check. ``LegacyMonitorShim``
@@ -211,12 +220,14 @@ class LegacyMonitorShim(_RealCocotbMonitor):  # type: ignore[misc]
     """
 
     def __init__(self, monitor: MonitorProtocol[Any]) -> None:
+        """Wrap ``monitor`` while bypassing ``cocotb_bus.monitors.Monitor.__init__``."""
         # Intentionally bypass cocotb_bus.monitors.Monitor.__init__!
         self._monitor = monitor
         self.name: str = monitor.name
         self.log: logging.Logger = logging.getLogger(f"cocotb.monitor.{monitor.name}")
 
     def add_callback(self, callback: Callable[[Any], Any]) -> Any:
+        """Forward ``callback`` registration to the wrapped monitor."""
         return self._monitor.add_callback(callback)
 
     def __repr__(self) -> str:
@@ -226,14 +237,10 @@ class LegacyMonitorShim(_RealCocotbMonitor):  # type: ignore[misc]
 def as_legacy_bus(
     bus: Bus, *, name: str | None = None, entity: Any = None
 ) -> LegacyBusShim:
-    """Wrap a typed :class:`Bus` in a :class:`LegacyBusShim` for legacy ``cocotbext-*``
-    code.
-    """
+    """Wrap a typed :class:`Bus` in a :class:`LegacyBusShim` for legacy code."""
     return LegacyBusShim(bus, name=name, entity=entity)
 
 
 def as_legacy_monitor(monitor: MonitorProtocol[Any]) -> LegacyMonitorShim:
-    """Wrap a :class:`Monitor` or adapter so real ``cocotb_bus.scoreboard.Scoreboard``
-    accepts it in ``add_interface()``.
-    """
+    """Wrap ``monitor`` for ``cocotb_bus.scoreboard.Scoreboard.add_interface()``."""
     return LegacyMonitorShim(monitor)

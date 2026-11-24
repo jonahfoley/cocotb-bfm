@@ -29,9 +29,13 @@ class MonitorProtocol(Protocol[TxT_co]):
     """Structural protocol satisfied by :class:`Monitor` and adapters."""
 
     @property
-    def name(self) -> str: ...
+    def name(self) -> str:
+        """Human-readable monitor name used by scoreboards and logs."""
+        ...
 
-    def add_callback(self, callback: Callable[[TxT_co], Any]) -> Any: ...
+    def add_callback(self, callback: Callable[[TxT_co], Any]) -> Any:
+        """Register a callback invoked with each captured transaction."""
+        ...
 
 
 class Monitor(Component, Generic[BusT, TxT]):
@@ -62,6 +66,18 @@ class Monitor(Component, Generic[BusT, TxT]):
         max_queue_size: int | None = 1024,
         capture_queue: bool = True,
     ) -> None:
+        """Initialize a passive monitor observing an externally owned ``bus``.
+
+        Args:
+            bus: Typed :class:`~cocotb_bfm.Bus` instance observed by this monitor.
+            clock: Clock handle used to sample bus signals and synchronous resets.
+            reset: Optional :class:`~cocotb_bfm.Reset` descriptor for reset handling.
+            name: Optional human-readable monitor name for logs and scoreboards.
+            max_queue_size: Bounded ring-buffer capacity for :meth:`recv` (defaults to
+                ``1024``; pass ``None`` for an unbounded queue).
+            capture_queue: Set ``False`` to disable queue buffering in callback-only
+                monitors.
+        """
         super().__init__(name=name)
         if max_queue_size is not None and max_queue_size < 1:
             raise ValueError(

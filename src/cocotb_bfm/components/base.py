@@ -16,8 +16,7 @@ from cocotb_bfm.exceptions import ComponentLifecycleError
 
 
 class Component(ABC):
-    """Base class for verification components with explicit ``start()`` / ``stop()``
-    lifecycle.
+    """Base class for verification components with explicit start/stop lifecycle.
 
     Unlike legacy ``cocotb-bus`` components, :class:`Component` **never** spawns
     background tasks inside ``__init__``. Start components explicitly via
@@ -28,6 +27,11 @@ class Component(ABC):
     """
 
     def __init__(self, *, name: str | None = None) -> None:
+        """Initialize the component without starting any background coroutine.
+
+        Args:
+            name: Optional human-readable name used for logs and scoreboards.
+        """
         self._name: str = name if name is not None else type(self).__name__
         self.log: logging.Logger = logging.getLogger(f"cocotb_bfm.{self._name}")
         self._task: Task[Any] | None = None
