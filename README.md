@@ -9,7 +9,19 @@ Built as a clean-slate redesign addressing the architectural pain points of lega
 - **SystemVerilog `interface` support** — Bind the exact same `Bus` definition to SV `interface` instances (`from_interface`), interface arrays (`from_interface_array`), flat prefixed/suffixed signals (`from_prefix`), regexes (`from_regex`), or explicit mappings (`from_mapping`), including nested sub-buses.
 - **Composition over inheritance & explicit lifecycle** — `Bus` is owned independently of `Driver` and `Monitor`. Components never spawn hidden tasks in `__init__`; use `start()` / `stop()` or `async with`.
 - **Reset-aware components** — First-class `Reset` descriptor supporting active-high/low and sync/async resets; `Driver` defaults to `ResetPolicy.FLUSH` with explicit `reset_policy` and `_on_reset()` customization.
-- **Modern `Scoreboard` + ecosystem interop** — Generic multi-channel `Scoreboard` with `InOrderMatcher`, `WindowMatcher`, `KeyedMatcher`, `UnorderedMatcher`, reference-model wiring, and rich diffs, while `Monitor.add_callback()` plugs directly into legacy `cocotb_bus.scoreboard.Scoreboard` and `AsyncSourceAdapter` / `LegacyBusShim` interoperate cleanly with `cocotbext-*` (`cocotbext-axi`, `cocotbext-spi`, `cocotbext-uart`, etc.).
+- **Modern `Scoreboard` + ecosystem interop** — Generic multi-channel `Scoreboard` with `InOrderMatcher`, `WindowMatcher`, `KeyedMatcher`, `UnorderedMatcher`, reference-model wiring, and rich diffs, while `as_legacy_monitor()` plugs into legacy `cocotb_bus.scoreboard.Scoreboard`, unmodified `cocotb_bus.monitors.BusMonitor` plugs directly into `cocotb_bfm.Scoreboard`, and `AsyncSourceAdapter` / `as_legacy_bus()` interoperate cleanly with `cocotbext-*` (`cocotbext-axi`, `cocotbext-spi`, `cocotbext-uart`, etc.).
+
+## Requirements
+
+- **Python:** `>= 3.11` (3.11, 3.12, 3.13, and 3.14 tested in CI)
+- **cocotb:** `>= 2.0.0` (cocotb 1.x is **not** supported; `cocotb-bfm` relies on cocotb 2.0+ typed handles such as `LogicObject`, `LogicArrayObject`, `PackedObject`, `LogicArray`, and `Task.cancel()`)
+- **RTL Simulator (optional, for running examples & RTL tests):** Verilator 5.036+ (or any cocotb 2.0+ supported simulator)
+
+```bash
+pip install cocotb-bfm
+# or for local development (includes cocotb-bus, pytest, mypy, ruff):
+uv sync --extra dev
+```
 
 ## Quick Example
 
