@@ -43,31 +43,31 @@ from cocotb_bfm import (
 class CsrMeta(PackedStruct):
     """Matches SystemVerilog ``csr_meta_t`` (8 bits total)."""
 
-    tag: int = bitfield(4)
-    priv: int = bitfield(2)
-    secure: int = bitfield(1)
-    burst_hint: int = bitfield(1)
+    tag: int = bitfield(4, default=0)
+    priv: int = bitfield(2, default=0)
+    secure: int = bitfield(1, default=0)
+    burst_hint: int = bitfield(1, default=0)
 
 
 class CsrCtrl(PackedStruct):
     """Matches SystemVerilog ``csr_ctrl_t`` (32 bits total)."""
 
-    threshold: int = bitfield(16)
-    mode: int = bitfield(8)
-    reserved: int = bitfield(6)
-    irq_en: int = bitfield(1)
+    threshold: int = bitfield(16, default=0)
+    mode: int = bitfield(8, default=0)
+    reserved: int = bitfield(6, default=0)
+    irq_en: int = bitfield(1, default=0)
     enable: int = bitfield(1, default=1)
 
 
 class CsrStatus(PackedStruct):
     """Matches SystemVerilog ``csr_status_t`` (32 bits total)."""
 
-    write_count: int = bitfield(8)
-    read_count: int = bitfield(8)
-    last_tag: int = bitfield(4)
-    last_priv: int = bitfield(2)
-    reserved: int = bitfield(9)
-    enabled: int = bitfield(1)
+    write_count: int = bitfield(8, default=0)
+    read_count: int = bitfield(8, default=0)
+    last_tag: int = bitfield(4, default=0)
+    last_priv: int = bitfield(2, default=0)
+    reserved: int = bitfield(9, default=0)
+    enabled: int = bitfield(1, default=0)
 
 
 # ---------------------------------------------------------------------------

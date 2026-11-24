@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Self, dataclass_transform
 
 from cocotb.types import LogicArray
 
+from cocotb_bfm.bus.spec import MISSING
 from cocotb_bfm.bus.validation import handle_path, handle_width
 from cocotb_bfm.exceptions import BusBindingError, SignalWidthError
 
@@ -22,22 +23,29 @@ class BitFieldSpec:
     lsb: int
     msb: int
     signed: bool = False
-    default: int = 0
+    default: Any = MISSING
+
+    @property
+    def has_default(self) -> bool:
+        """Return ``True`` if an explicit default value was declared."""
+        return self.default is not MISSING
 
 
 @dataclass(frozen=True, slots=True)
 class _BitFieldMarker:
     width: int
-    default: int = 0
+    default: Any = MISSING
     signed: bool = False
 
 
-def bitfield(width: int, *, default: int = 0, signed: bool = False) -> Any:
+def bitfield(width: int, *, default: Any = MISSING, signed: bool = False) -> Any:
     """Declare a bitfield on a :class:`PackedStruct` (MSB-first SV packed order).
 
     Args:
         width: Field width in bits (must be >= 1).
-        default: Default integer value when omitted from construction.
+        default: Explicit default integer value making this field optional in both
+            static type checking (PEP 681) and runtime construction. Omit to mark
+            the field required.
         signed: Interpret the bitfield as two's-complement signed on unpack.
     """
     if width < 1:
@@ -153,7 +161,15 @@ class PackedStruct:
             bound[key] = int(val)
 
         for spec in specs:
-            val = bound.get(spec.name, spec.default)
+            if spec.name in bound:
+                val = bound[spec.name]
+            elif spec.has_default:
+                val = int(spec.default)
+            else:
+                cls_name = type(self).__name__
+                raise TypeError(
+                    f"{cls_name}() missing required bitfield argument: {spec.name!r}"
+                )
             _check_field_range(type(self).__name__, spec, val)
             object.__setattr__(self, spec.name, val)
 

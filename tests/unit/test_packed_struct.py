@@ -39,6 +39,9 @@ def test_packed_struct_msb_lsb_layout_and_signed_fields() -> None:
 
 
 def test_packed_struct_range_and_width_validation() -> None:
+    with pytest.raises(TypeError, match="missing required bitfield argument: 'offset'"):
+        SampleMeta(tag=1)  # type: ignore[call-arg]
+
     with pytest.raises(ValueError, match="out of range"):
         SampleMeta(tag=16, offset=0)
 

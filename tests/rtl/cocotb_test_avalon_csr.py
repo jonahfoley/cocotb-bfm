@@ -6,8 +6,7 @@ Exercises:
 - `RequestDriver` (`AvalonCsrMaster`) with typed responses, `waitrequest`, `byteenable`,
   W1C/RO CSRs
 - Asynchronous active-low reset (`Reset(..., active_low=True, sync=False)`) asserted
-  mid-clock-cycle
-  under both `ResetPolicy.FLUSH` (default) and `ResetPolicy.PAUSE`
+  mid-clock-cycle under both `ResetPolicy.FLUSH` (default) and `ResetPolicy.PAUSE`
 - `AvalonCsrBus.from_prefix(dut, "flat_csr")` proving identical BFM reuse on flat
   signals
 - `Scoreboard` with golden CSR model and `KeyedMatcher` tag matching
@@ -17,20 +16,29 @@ from __future__ import annotations
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.handle import HierarchyObject
+from cocotb.handle import HierarchyObject, LogicObject
 from cocotb.triggers import ClockCycles, RisingEdge, Timer
 from examples.avalon_mm_csr.avalon_csr import (
     AvalonCsrBus,
     AvalonCsrMaster,
     AvalonCsrMonitor,
     AvalonObservedTx,
+    AvalonReq,
     CsrCtrl,
     CsrMeta,
     CsrStatus,
     CsrSubsystemBus,
 )
 
-from cocotb_bfm import KeyedMatcher, Reset, ResetError, ResetPolicy, Scoreboard
+from cocotb_bfm import (
+    Bus,
+    KeyedMatcher,
+    Reset,
+    ResetError,
+    ResetPolicy,
+    Scoreboard,
+    VectorObject,
+)
 
 ADDR_CTRL = 0x0
 ADDR_SCRATCH = 0x1
@@ -40,55 +48,55 @@ ADDR_DATA0 = 0x4
 ADDR_DATA1 = 0x5
 
 
-async def _init_avalon_dut(dut: HierarchyObject) -> None:
-    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())  # type: ignore[arg-type]
-    dut.arst_n.value = 0
-    dut.force_stall.value = 0
-    dut.wait_cycles.value = 0
-    dut.irq_set.value = 0
+class AvalonTbCtrlBus(Bus):
+    """Typed handle container for the top-level testbench control pins."""
 
-    # Idle primary SV interface & secondary flat bus
-    dut.csr_if.address.value = 0
-    dut.csr_if.read.value = 0
-    dut.csr_if.write.value = 0
-    dut.csr_if.writedata.value = 0
-    dut.csr_if.byteenable.value = 0
-    dut.csr_if.meta.value = 0
+    clk: LogicObject
+    arst_n: LogicObject
+    force_stall: LogicObject
+    wait_cycles: VectorObject
+    irq_set: VectorObject
 
-    dut.flat_csr_address.value = 0
-    dut.flat_csr_read.value = 0
-    dut.flat_csr_write.value = 0
-    dut.flat_csr_writedata.value = 0
-    dut.flat_csr_byteenable.value = 0
+
+async def _init_avalon_dut(
+    dut: HierarchyObject,
+) -> tuple[AvalonTbCtrlBus, CsrSubsystemBus, AvalonCsrBus]:
+    tb = AvalonTbCtrlBus.from_entity(dut)
+    subsys = CsrSubsystemBus.from_interface(dut)
+    flat_bus = AvalonCsrBus.from_prefix(dut, "flat_csr")
+
+    Clock(tb.clk, 10, unit="ns").start()
+    tb.arst_n.value = 0
+    tb.force_stall.value = 0
+    tb.wait_cycles.value = 0
+    tb.irq_set.value = 0
+
+    subsys.csr.drive_idle()
+    flat_bus.drive_idle()
 
     await Timer(25, unit="ns")
-    dut.arst_n.value = 1
-    await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
+    tb.arst_n.value = 1
+    await ClockCycles(tb.clk, 2)
+    return tb, subsys, flat_bus
 
 
 @cocotb.test()
 async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
     dut: HierarchyObject,
 ) -> None:
-    """Full end-to-end Avalon-MM CSR test via SV interfaces, packed structs, waitstates,
-    and SB.
-    """
-    await _init_avalon_dut(dut)
-
-    # Bind nested composite bus covering BOTH `dut.csr_if` and `dut.diag_if`.
-    subsys = CsrSubsystemBus.from_interface(dut)
-    rst = Reset(dut.arst_n, active_low=True, sync=False)
+    """End-to-end Avalon-MM CSR test via SV interfaces, packed structs, and SB."""
+    tb, subsys, _ = await _init_avalon_dut(dut)
+    rst = Reset(tb.arst_n, active_low=True, sync=False)
 
     async with (
-        AvalonCsrMaster(subsys.csr, dut.clk, reset=rst, name="avm_master") as master,
-        AvalonCsrMonitor(subsys.csr, dut.clk, reset=rst, name="avm_mon") as mon,
+        AvalonCsrMaster(subsys.csr, tb.clk, reset=rst, name="avm_master") as master,
+        AvalonCsrMonitor(subsys.csr, tb.clk, reset=rst, name="avm_mon") as mon,
         Scoreboard(name="avalon_csr_sb") as sb,
     ):
         ch = sb.add_channel("csr_tx", mon)
 
-        # 1. Verify reset default CTRL register & packed CsrCtrl decode with waitstates
-        # = 2.
-        dut.wait_cycles.value = 2
+        # 1. Verify reset default CTRL register & packed CsrCtrl decode with wait=2.
+        tb.wait_cycles.value = 2
         m1 = CsrMeta(tag=0x3, priv=1, secure=1, burst_hint=0)
         ch.expect(AvalonObservedTx(ADDR_CTRL, False, 0x0000_0001, 0xF, m1))
         resp = await master.read_reg(ADDR_CTRL, meta=m1)
@@ -98,7 +106,7 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
         assert ctrl_rst == CsrCtrl(threshold=0, mode=0, reserved=0, irq_en=0, enable=1)
 
         # 2. Write packed CsrCtrl struct with waitstates = 3 and read back.
-        dut.wait_cycles.value = 3
+        tb.wait_cycles.value = 3
         new_ctrl = CsrCtrl(threshold=0xBEEF, mode=0x42, reserved=0, irq_en=1, enable=1)
         m2 = CsrMeta(tag=0xA, priv=3, secure=1, burst_hint=1)
         ch.expect(AvalonObservedTx(ADDR_CTRL, True, new_ctrl.to_int(), 0xF, m2))
@@ -110,7 +118,7 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
         assert resp_ctrl.resp_meta == m2
 
         # 3. Byte-enable masked writes on SCRATCH across individual lanes.
-        dut.wait_cycles.value = 1
+        tb.wait_cycles.value = 1
         m3 = CsrMeta(tag=0x5, priv=2, secure=0, burst_hint=0)
         ch.expect(AvalonObservedTx(ADDR_SCRATCH, True, 0x1122_3344, 0xF, m3))
         await master.write_reg(ADDR_SCRATCH, 0x1122_3344, byteenable=0xF, meta=m3)
@@ -128,9 +136,8 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
         ch.expect(AvalonObservedTx(ADDR_STATUS, True, 0xFFFF_FFFF, 0xF, m4))
         await master.write_reg(ADDR_STATUS, 0xFFFF_FFFF, meta=m4)
 
-        # At this point: 4 writes (CTRL, SCRATCHx2, STATUS) and 3 reads completed before
-        # this read.
-        await RisingEdge(dut.clk)  # type: ignore[arg-type]
+        # 4 writes (CTRL, SCRATCHx2, STATUS) and 3 reads completed before this read.
+        await RisingEdge(tb.clk)
         live_diag = CsrStatus.from_handle(subsys.diag.status)
         assert live_diag == CsrStatus(
             write_count=4,
@@ -146,10 +153,10 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
         assert CsrStatus.unpack(resp_status.readdata) == live_diag
 
         # 5. W1C IRQ_STS register + diag_if.irq_pending sideband.
-        dut.irq_set.value = 0x55
-        await RisingEdge(dut.clk)  # type: ignore[arg-type]
-        dut.irq_set.value = 0x00
-        await RisingEdge(dut.clk)  # type: ignore[arg-type]
+        tb.irq_set.value = 0x55
+        await RisingEdge(tb.clk)
+        tb.irq_set.value = 0x00
+        await RisingEdge(tb.clk)
         assert int(subsys.diag.irq_pending.value) == 1
 
         # Clear bits 0x05 via W1C -> 0x50 remains.
@@ -165,7 +172,7 @@ async def test_avalon_csr_sv_interface_packed_structs_and_scoreboard(
         # Clear remaining bits -> irq_pending drops to 0.
         ch.expect(AvalonObservedTx(ADDR_IRQ_STS, True, 0x0000_0050, 0x1, m5))
         await master.write_reg(ADDR_IRQ_STS, 0x0000_0050, byteenable=0x1, meta=m5)
-        await RisingEdge(dut.clk)  # type: ignore[arg-type]
+        await RisingEdge(tb.clk)
         assert int(subsys.diag.irq_pending.value) == 0
 
 
@@ -174,43 +181,38 @@ async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
     dut: HierarchyObject,
 ) -> None:
     """Verify async reset asserted mid-cycle under ResetPolicy.FLUSH and PAUSE."""
-    await _init_avalon_dut(dut)
-
-    subsys = CsrSubsystemBus.from_interface(dut)
-    arst = Reset(dut.arst_n, active_low=True, sync=False)
+    tb, subsys, _ = await _init_avalon_dut(dut)
+    arst = Reset(tb.arst_n, active_low=True, sync=False)
 
     # --- Part A: Default ResetPolicy.FLUSH with async mid-cycle reset ---
     async with (
-        AvalonCsrMaster(subsys.csr, dut.clk, reset=arst, name="avm_flush") as master,
-        AvalonCsrMonitor(subsys.csr, dut.clk, reset=arst, name="mon_flush") as mon,
+        AvalonCsrMaster(subsys.csr, tb.clk, reset=arst, name="avm_flush") as master,
+        AvalonCsrMonitor(subsys.csr, tb.clk, reset=arst, name="mon_flush") as mon,
     ):
-        # Program non-zero values before reset.
+        # Program non-zero values before reset (default=0 bitfields omit cleanly!).
         await master.write_reg(ADDR_DATA0, 0xCAFE_BABE, meta=CsrMeta(tag=0x9, priv=2))
         r0 = await master.read_reg(ADDR_DATA0)
         assert r0.readdata == 0xCAFE_BABE
 
         # Stall waitrequest and enqueue an in-flight write + queued read.
-        dut.force_stall.value = 1
+        tb.force_stall.value = 1
         h_stalled = master.enqueue_request(
-            AvalonCsrMaster._build_req_write(ADDR_DATA1, 0x1234_5678)
-            if hasattr(AvalonCsrMaster, "_build_req_write")
-            else _make_write(ADDR_DATA1, 0x1234_5678, tag=0xE)
+            _make_write(ADDR_DATA1, 0x1234_5678, tag=0xE)
         )
         h_queued = master.enqueue_request(_make_read(ADDR_DATA0, tag=0xF))
 
-        await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
+        await ClockCycles(tb.clk, 2)
         assert not h_stalled.done
         assert int(subsys.csr.write.value) == 1
 
         # Assert asynchronous reset 3 ns AFTER posedge clk (off the clock edge!).
         await Timer(3, unit="ns")
-        dut.arst_n.value = 0
+        tb.arst_n.value = 0
         await Timer(2, unit="ns")
 
         # Hardware registers reset immediately before the next clock edge!
         assert CsrStatus.from_handle(subsys.diag.status).write_count == 0
-        # Driver immediately flushed stalled + queued requests with ResetError and idled
-        # bus!
+        # Driver flushed stalled + queued requests with ResetError and idled bus!
         for handle in (h_stalled, h_queued):
             try:
                 await handle.wait()
@@ -221,10 +223,10 @@ async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
         assert int(subsys.csr.read.value) == 0
 
         # Release stall and async reset off-edge; verify clean recovery!
-        dut.force_stall.value = 0
+        tb.force_stall.value = 0
         await Timer(2, unit="ns")
-        dut.arst_n.value = 1
-        await RisingEdge(dut.clk)  # type: ignore[arg-type]
+        tb.arst_n.value = 1
+        await RisingEdge(tb.clk)
 
         # Post-reset read confirms DATA0 was asynchronously cleared to 0.
         r_after = await master.read_reg(ADDR_DATA0, meta=CsrMeta(tag=0x1))
@@ -235,31 +237,31 @@ async def test_avalon_csr_async_reset_off_clock_edge_flush_and_pause(
     # --- Part B: Explicit ResetPolicy.PAUSE retries stalled read after async reset ---
     async with AvalonCsrMaster(
         subsys.csr,
-        dut.clk,
+        tb.clk,
         reset=arst,
         reset_policy=ResetPolicy.PAUSE,
         name="avm_pause",
     ) as master_pause:
-        dut.force_stall.value = 1
+        tb.force_stall.value = 1
         retry_meta = CsrMeta(tag=0xD, priv=3, secure=1, burst_hint=0)
         h_retry = master_pause.enqueue_request(
             _make_read(ADDR_CTRL, tag=0xD, meta=retry_meta)
         )
 
-        await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
+        await ClockCycles(tb.clk, 2)
         assert not h_retry.done
         assert int(subsys.csr.read.value) == 1
 
         # Pulse async reset off the clock edge.
         await Timer(3, unit="ns")
-        dut.arst_n.value = 0
+        tb.arst_n.value = 0
         await Timer(2, unit="ns")
         assert int(subsys.csr.read.value) == 0  # idled during reset
 
         # Unstall and release async reset -> paused read retries and succeeds!
-        dut.force_stall.value = 0
+        tb.force_stall.value = 0
         await Timer(2, unit="ns")
-        dut.arst_n.value = 1
+        tb.arst_n.value = 1
 
         resp_retry = await h_retry.wait()
         assert resp_retry.readdata == 0x0000_0001
@@ -271,38 +273,32 @@ async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(
     dut: HierarchyObject,
 ) -> None:
     """Bind AvalonCsrBus via from_prefix AND verify KeyedMatcher by packed tag."""
-    await _init_avalon_dut(dut)
-
-    # 1. Flat prefixed Avalon-MM CSR bank (optional meta/resp_meta omitted -> None).
-    flat_bus = AvalonCsrBus.from_prefix(dut, "flat_csr")
+    tb, subsys, flat_bus = await _init_avalon_dut(dut)
     assert flat_bus.meta is None
     assert flat_bus.resp_meta is None
 
-    arst = Reset(dut.arst_n, active_low=True, sync=False)
+    arst = Reset(tb.arst_n, active_low=True, sync=False)
     async with (
-        AvalonCsrMaster(
-            flat_bus, dut.clk, reset=arst, name="flat_master"
-        ) as flat_master,
-        AvalonCsrMonitor(flat_bus, dut.clk, reset=arst, name="flat_mon") as flat_mon,
+        AvalonCsrMaster(flat_bus, tb.clk, reset=arst, name="flat_master") as flat_drv,
+        AvalonCsrMonitor(flat_bus, tb.clk, reset=arst, name="flat_mon") as flat_mon,
         Scoreboard(name="flat_csr_sb") as sb,
     ):
         ch = sb.add_channel("flat", flat_mon)
         ch.expect(AvalonObservedTx(ADDR_DATA0, True, 0x1357_2468, 0xF, None))
         ch.expect(AvalonObservedTx(ADDR_DATA0, False, 0x1357_2468, 0xF, None))
 
-        await flat_master.write_reg(ADDR_DATA0, 0x1357_2468)
-        resp = await flat_master.read_reg(ADDR_DATA0)
+        await flat_drv.write_reg(ADDR_DATA0, 0x1357_2468)
+        resp = await flat_drv.read_reg(ADDR_DATA0)
         assert resp.readdata == 0x1357_2468
         assert resp.resp_meta is None
-        await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
+        await ClockCycles(tb.clk, 2)
 
     # 2. KeyedMatcher on SV interface CSR bank keyed by packed-struct `meta.tag`.
-    if_bus = AvalonCsrBus.from_interface(dut.csr_if)
     async with (
         AvalonCsrMaster(
-            if_bus, dut.clk, reset=arst, name="keyed_master"
+            subsys.csr, tb.clk, reset=arst, name="keyed_master"
         ) as keyed_master,
-        AvalonCsrMonitor(if_bus, dut.clk, reset=arst, name="keyed_mon") as keyed_mon,
+        AvalonCsrMonitor(subsys.csr, tb.clk, reset=arst, name="keyed_mon") as keyed_mon,
         Scoreboard(name="keyed_sb") as keyed_sb,
     ):
         kch = keyed_sb.add_channel(
@@ -320,20 +316,16 @@ async def test_avalon_csr_flat_prefix_and_keyed_scoreboard(
 
         await keyed_master.write_reg(ADDR_DATA0, 0x1111_1111, meta=m_a)
         await keyed_master.write_reg(ADDR_DATA1, 0x2222_2222, meta=m_b)
-        await ClockCycles(dut.clk, 2)  # type: ignore[arg-type]
+        await ClockCycles(tb.clk, 2)
 
 
-def _make_write(address: int, data: int, *, tag: int = 0):
-    from examples.avalon_mm_csr.avalon_csr import AvalonReq
-
+def _make_write(address: int, data: int, *, tag: int = 0) -> AvalonReq:
     return AvalonReq(
         address=address, is_write=True, writedata=data, meta=CsrMeta(tag=tag)
     )
 
 
-def _make_read(address: int, *, tag: int = 0, meta: CsrMeta | None = None):
-    from examples.avalon_mm_csr.avalon_csr import AvalonReq
-
+def _make_read(address: int, *, tag: int = 0, meta: CsrMeta | None = None) -> AvalonReq:
     return AvalonReq(
         address=address,
         is_write=False,

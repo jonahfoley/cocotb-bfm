@@ -31,5 +31,6 @@ repos:
           - src/cocotb_bfm
           - examples
           - tests/typing
+          - tests/rtl
         additional_dependencies:
           - cocotb>=2.0.0

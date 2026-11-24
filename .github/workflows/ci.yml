@@ -37,7 +37,7 @@ jobs:
         run: uv run ruff format --check src examples tests
 
       - name: Mypy strict type check
-        run: uv run mypy src/cocotb_bfm examples tests/typing
+        run: uv run mypy src/cocotb_bfm examples tests/typing tests/rtl
 
   unit-tests:
     name: Unit Tests (Python ${{ matrix.python-version }})
