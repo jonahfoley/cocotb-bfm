@@ -471,7 +471,12 @@ class Bus:
         Supports non-zero and negative SystemVerilog generate/interface ranges such as
         ``lanes_if[2:5]`` or ``lanes_if[-2:1]``.
         """
-        rng = getattr(interface_array, "range", None)
+        try:
+            rng = getattr(interface_array, "range", None)
+        except (RuntimeError, AttributeError):
+            # Some simulators (e.g. Verilator 5.036) do not report a VPI range
+            # direction on interface arrays; fall back to enumeration order.
+            rng = None
         if rng is not None:
             indices: list[int] = list(rng)
             return {

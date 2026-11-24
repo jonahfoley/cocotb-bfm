@@ -117,11 +117,12 @@ jobs:
       - name: Run Verilator RTL integration test suite
         run: uv run pytest -v -m rtl tests/rtl
 
-      - name: Run beginner examples
+      - name: Run beginner & pattern examples
         run: |
           uv run python examples/hello_valid_ready/run_example.py
           uv run python examples/sv_interface_and_reset/run_example.py
           uv run python examples/packed_struct_and_ooo/run_example.py
+          uv run python examples/advanced_patterns/run_example.py
 
       - name: Run Avalon-MM CSR example
         run: uv run python examples/avalon_mm_csr/run_example.py

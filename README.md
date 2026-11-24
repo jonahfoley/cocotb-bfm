@@ -76,5 +76,6 @@ Runnable Verilator examples live in [`examples/`](./examples/README.md):
 - [`examples/hello_valid_ready`](examples/hello_valid_ready/README.md) — minimal `Bus`, `Driver`, `Monitor`, and `Scoreboard` quickstart
 - [`examples/sv_interface_and_reset`](examples/sv_interface_and_reset/README.md) — SystemVerilog `interface` binding, `connect_model()`, and `Reset` recovery
 - [`examples/packed_struct_and_ooo`](examples/packed_struct_and_ooo/README.md) — `PackedStruct` bitfields and out-of-order `KeyedMatcher` scoreboarding
+- [`examples/advanced_patterns`](examples/advanced_patterns/README.md) — `RegexResolver`, `MappingResolver`, `CompositeResolver`, interface arrays, custom `Component`, `Role`, `QueueAdapter`, `WindowMatcher`, and `UnorderedMatcher`
 - [`examples/avalon_mm_csr`](examples/avalon_mm_csr/README.md) — full Avalon-MM `RequestDriver` and CSR bank
 - [`examples/legacy_cocotb_bus_interop`](examples/legacy_cocotb_bus_interop/README.md) — interop with legacy `cocotb-bus` and `cocotbext-*`
