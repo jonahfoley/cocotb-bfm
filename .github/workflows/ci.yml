@@ -130,8 +130,8 @@ jobs:
       - name: Run legacy cocotb-bus interop example
         run: uv run python examples/legacy_cocotb_bus_interop/run_example.py
 
-  icarus-and-ghdl-tests:
-    name: Icarus Verilog & GHDL RTL Tests (Python ${{ matrix.python-version }})
+  icarus-tests:
+    name: Icarus Verilog RTL Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -149,18 +149,49 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Install Icarus Verilog and GHDL
+      - name: Install Icarus Verilog
         run: |
           sudo apt-get update
-          sudo apt-get install -y iverilog ghdl-mcode
+          sudo apt-get install -y iverilog
 
-      - name: Check simulator versions
-        run: |
-          iverilog -V | head -n 1
-          ghdl --version | head -n 2
+      - name: Check Icarus Verilog version
+        run: iverilog -V | head -n 1
 
       - name: Install dependencies
         run: uv sync --extra dev --python ${{ matrix.python-version }}
 
-      - name: Run Icarus Verilog & GHDL RTL integration tests
-        run: uv run pytest -v tests/rtl/test_icarus_integration.py tests/rtl/test_vhdl_integration.py
+      - name: Run Icarus Verilog RTL integration tests
+        run: uv run pytest -v tests/rtl/test_icarus_integration.py
+
+  ghdl-tests:
+    name: GHDL VHDL RTL Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install GHDL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ghdl-mcode
+
+      - name: Check GHDL version
+        run: ghdl --version | head -n 2
+
+      - name: Install dependencies
+        run: uv sync --extra dev --python ${{ matrix.python-version }}
+
+      - name: Run GHDL VHDL RTL integration tests
+        run: uv run pytest -v tests/rtl/test_vhdl_integration.py
