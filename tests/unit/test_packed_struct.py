@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
+from enum import IntEnum
+
 import pytest
+from cocotb.handle import Immediate
 from cocotb.types import LogicArray
 
 from cocotb_bfm import PackedStruct, SignalWidthError, bitfield
-from tests.unit.fakes import FakeHierarchyObject, FakeLogicArrayObject, FakeLogicObject
+from tests.unit.fakes import (
+    FakeHierarchyObject,
+    FakeLogicArrayObject,
+    FakeLogicObject,
+)
+
+
+class PrivLevel(IntEnum):
+    USER = 0
+    SUPERVISOR = 1
+    MACHINE = 3
 
 
 class SampleMeta(PackedStruct):
     tag: int = bitfield(4)
     offset: int = bitfield(4, signed=True)
     enable: int = bitfield(1, default=1)
+
+
+class EnumMeta(PackedStruct):
+    priv: PrivLevel = bitfield(2, default=PrivLevel.USER)
+    valid: int = bitfield(1, default=1)
 
 
 def test_packed_struct_msb_lsb_layout_and_signed_fields() -> None:
@@ -74,5 +92,23 @@ def test_packed_struct_from_handle_flat_and_hierarchical() -> None:
         },
     )
     meta2 = SampleMeta(tag=7, offset=3, enable=1)
-    meta2.write_handle(hier)
+    meta2.write_handle(hier, action=Immediate)
+    assert isinstance(hier["tag"].last_action, Immediate)
     assert SampleMeta.from_handle(hier) == meta2
+
+
+def test_packed_struct_immutability_hash_xz_error_and_intenum() -> None:
+    m = EnumMeta(priv=PrivLevel.MACHINE, valid=1)
+    assert m.priv is PrivLevel.MACHINE
+    unpacked = EnumMeta.unpack(m.to_logic_array())
+    assert unpacked.priv is PrivLevel.MACHINE
+    assert {m: "ok"}[unpacked] == "ok"
+
+    # Immutable after construction (preserving dict/set hash safety!)
+    with pytest.raises(AttributeError, match="immutable"):
+        m.valid = 0  # type: ignore[misc]
+
+    # Clear error naming struct & handle path when X/Z bits are unpacked
+    xz_handle = FakeLogicArrayObject("csr_meta", width=3, value="1x0", path="dut.meta")
+    with pytest.raises(ValueError, match=r"EnumMeta\.unpack \('dut\.meta'\).*1X0"):
+        EnumMeta.from_handle(xz_handle)

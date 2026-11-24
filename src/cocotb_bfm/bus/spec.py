@@ -67,6 +67,8 @@ class SignalSpec:
     hdl_name: str
     expected_types: tuple[type[Any], ...]
     optional: bool
+    has_default: bool = False
+    default: Any = MISSING
     aliases: tuple[str, ...] = ()
     direction: Direction = Direction.UNSPECIFIED
     width: int | None = None
@@ -100,6 +102,8 @@ class SubBusSpec:
     bus_type: type[Bus]
     hdl_name: str
     optional: bool
+    has_default: bool = False
+    default: Any = MISSING
     separator: str | None = None
     aliases: tuple[str, ...] = ()
     description: str = ""

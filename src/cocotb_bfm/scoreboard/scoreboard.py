@@ -224,6 +224,9 @@ class Scoreboard:
                     return
                 case bytes() | bytearray() | str():
                     channel.expect(cast(OutT, predicted))
+                case tuple() if hasattr(predicted, "_fields"):
+                    # NamedTuple instances are Iterable; never explode their fields!
+                    channel.expect(cast(OutT, predicted))
                 case Iterable() as batch if expand_iterables:
                     channel.expect_many(cast(Iterable[OutT], batch))
                 case single:
@@ -277,3 +280,12 @@ class Scoreboard:
     ) -> None:
         if exc_type is None:
             self.assert_clean(allow_pending=self.allow_pending_on_exit)
+            return
+        has_dirty_state = any(
+            len(ch.mismatches) > 0 or ch.pending_count > 0
+            for ch in self._channels.values()
+        )
+        if exc_val is not None and has_dirty_state:
+            note = self.summary()
+            exc_val.add_note(note)
+            self.log.warning("%s", note)

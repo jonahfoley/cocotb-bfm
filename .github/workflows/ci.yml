@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-and-typecheck:
-    name: Lint & Static Type Check
+  lint-typecheck-and-build:
+    name: Lint, Static Type Check & Wheel Smoke Test
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -37,7 +37,22 @@ jobs:
         run: uv run ruff format --check src examples tests
 
       - name: Mypy strict type check
-        run: uv run mypy src/cocotb_bfm examples tests/typing tests/rtl
+        run: uv run mypy
+
+      - name: Build sdist & wheel and verify py.typed in clean venv
+        run: |
+          uv build
+          tmp_dir="$(mktemp -d)"
+          uv venv --python 3.11 "$tmp_dir/venv"
+          uv pip install --python "$tmp_dir/venv/bin/python" dist/*.whl
+          (
+            cd "$tmp_dir"
+            "$tmp_dir/venv/bin/python" -c "
+          import importlib.resources, cocotb_bfm
+          assert (importlib.resources.files(cocotb_bfm) / 'py.typed').is_file()
+          print('Installed wheel OK:', cocotb_bfm.__version__)
+          "
+          )
 
   unit-tests:
     name: Unit Tests (Python ${{ matrix.python-version }})
@@ -96,7 +111,7 @@ jobs:
       - name: Check Verilator version
         run: verilator --version
 
-      - name: Install dependencies
+      - name: Install dependencies (includes cocotb-bus)
         run: uv sync --extra dev --python ${{ matrix.python-version }}
 
       - name: Run Verilator RTL integration test suite
@@ -105,10 +120,5 @@ jobs:
       - name: Run Avalon-MM CSR example
         run: uv run python examples/avalon_mm_csr/run_example.py
 
-      - name: Run legacy cocotb-bus interop example (standalone)
+      - name: Run legacy cocotb-bus interop example
         run: uv run python examples/legacy_cocotb_bus_interop/run_example.py
-
-      - name: Run legacy cocotb-bus interop example (with cocotb-bus installed)
-        run: |
-          uv pip install "cocotb-bus>=0.3.0"
-          uv run python examples/legacy_cocotb_bus_interop/run_example.py

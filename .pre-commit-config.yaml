@@ -28,9 +28,6 @@ repos:
         pass_filenames: false
         args:
           - --config-file=pyproject.toml
-          - src/cocotb_bfm
-          - examples
-          - tests/typing
-          - tests/rtl
         additional_dependencies:
           - cocotb>=2.0.0
+          - cocotb-bus>=0.3.0

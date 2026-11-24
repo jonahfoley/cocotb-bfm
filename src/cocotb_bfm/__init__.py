@@ -22,8 +22,10 @@ from cocotb_bfm.bus import (
 from cocotb_bfm.compat import (
     AsyncSourceAdapter,
     LegacyBusShim,
+    LegacyMonitorShim,
     QueueAdapter,
     as_legacy_bus,
+    as_legacy_monitor,
 )
 from cocotb_bfm.components import (
     Component,
@@ -79,6 +81,7 @@ __all__ = [
     "InterfaceResolver",
     "KeyedMatcher",
     "LegacyBusShim",
+    "LegacyMonitorShim",
     "MappingResolver",
     "MatchResult",
     "Matcher",
@@ -108,6 +111,7 @@ __all__ = [
     "WindowMatcher",
     "__version__",
     "as_legacy_bus",
+    "as_legacy_monitor",
     "bitfield",
     "format_diff",
     "format_value",

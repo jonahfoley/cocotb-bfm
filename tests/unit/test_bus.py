@@ -5,9 +5,13 @@ from __future__ import annotations
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import pytest
 from cocotb.handle import Immediate, LogicArrayObject, LogicObject
+from cocotb.types import Range
+from cocotb_bus.bus import Bus as LegacyCocotbBus  # type: ignore[import-untyped]
 
 from cocotb_bfm import (
     Bus,
@@ -233,7 +237,7 @@ def test_nested_sub_bus_on_nested_sv_interface_and_flat_fallback() -> None:
 
 
 def test_1bit_vector_tolerance_and_strict_mode() -> None:
-    onebit = FakeLogicArrayObject("valid_vec", width=1)
+    onebit: Any = FakeLogicArrayObject("valid_vec", width=1)
     eightbit = FakeLogicArrayObject("data", width=8)
 
     # Default (strict_types=False): 1-bit LogicArrayObject accepted on LogicObject
@@ -242,10 +246,11 @@ def test_1bit_vector_tolerance_and_strict_mode() -> None:
     assert bus.valid is onebit
 
     # Multi-bit vector rejected on LogicObject field even in non-strict mode.
+    bad_scalar: Any = eightbit
     with pytest.raises(
         SignalTypeError, match="expected LogicObject, got FakeLogicArrayObject"
     ):
-        StreamBus(valid=eightbit, data=eightbit)
+        StreamBus(valid=bad_scalar, data=eightbit)
 
     # strict_types=True rejects 1-bit LogicArrayObject with helpful hint.
     scope = FakeHierarchyObject("dut", {"valid": onebit, "data": eightbit})
@@ -315,16 +320,109 @@ def test_sample_drive_direction_and_drive_idle() -> None:
 
 
 def test_legacy_bus_shim() -> None:
-    bus = StreamBus.from_interface(_make_stream_scope(with_ready=False))
-    shim = as_legacy_bus(bus, name="axis")
-    assert shim.valid is bus.valid
-    assert shim.data is bus.data
-    assert set(shim._signals.keys()) == {"valid", "data"}
-    assert shim._optional_signals == {}
-    assert shim._name == "axis"
+    # Unbound optional signals (`ready`, `last`) must NOT appear on `hasattr()` or
+    # `_signals`, whereas bound optional signals MUST appear in `_signals`—matching
+    # real `cocotb_bus.bus.Bus`!
+    bus_minimal = StreamBus.from_interface(_make_stream_scope(with_ready=False))
+    shim_min = as_legacy_bus(bus_minimal, name="axis_min")
+    assert isinstance(shim_min, LegacyCocotbBus)
+    assert shim_min.valid is bus_minimal.valid
+    assert shim_min.data is bus_minimal.data
+    assert set(shim_min._signals.keys()) == {"valid", "data"}
+    assert shim_min._optional_signals == {}
+    assert not hasattr(shim_min, "ready")
+    assert not hasattr(shim_min, "last")
+
+    bus_with_rdy = StreamBus.from_interface(_make_stream_scope(with_ready=True))
+    shim_full = as_legacy_bus(bus_with_rdy, name="axis_full")
+    assert hasattr(shim_full, "ready")
+    assert set(shim_full._signals.keys()) == {"valid", "data", "ready"}
+    assert set(shim_full._optional_signals.keys()) == {"ready"}
 
 
-def test_mypy_rejects_invalid_bus_attribute_statically(tmp_path) -> None:
+def test_bus_immutability_prevents_forgot_value_footgun() -> None:
+    bus = StreamBus.from_interface(_make_stream_scope())
+    with pytest.raises(AttributeError, match=r"did you mean 'bus\.valid\.value = 1'"):
+        bus.valid = 1  # type: ignore[misc,assignment]
+    with pytest.raises(AttributeError, match="immutable"):
+        del bus.valid
+
+
+def test_optional_sub_bus_raises_on_partially_wired_rtl() -> None:
+    # `rx_valid` exists, but required `rx_data` is missing -> must NOT silently become
+    # `rx = None`!
+    broken_flat = FakeHierarchyObject(
+        "broken_if",
+        {
+            "tx_valid": FakeLogicObject("tx_valid"),
+            "tx_data": FakeLogicArrayObject("tx_data", 8),
+            "rx_valid": FakeLogicObject("rx_valid"),
+        },
+    )
+    with pytest.raises(SignalNotFoundError, match=r"StreamBus\.data"):
+        DualBus.from_interface(broken_flat)
+
+    # Dedicated child scope `rx` exists, missing `data` -> must also raise!
+    broken_nested = FakeHierarchyObject(
+        "nested_if",
+        {
+            "tx": _make_stream_scope(),
+            "rx": FakeHierarchyObject("rx", {"valid": FakeLogicObject("valid")}),
+        },
+    )
+    with pytest.raises(SignalNotFoundError, match=r"StreamBus\.data"):
+        DualBus.from_interface(broken_nested)
+
+
+def test_pep681_default_vs_optional_and_field_ordering() -> None:
+    class NullableNoDefaultBus(Bus):
+        valid: LogicObject
+        ready: LogicObject | None
+
+    v = FakeLogicObject("valid")
+    # Direct constructor requires `ready` (matching PEP 681 / mypy), while resolver
+    # still binds missing optional RTL signal to None!
+    with pytest.raises(TypeError, match="missing required signal argument: 'ready'"):
+        NullableNoDefaultBus(valid=v)  # type: ignore[call-arg]
+    b_direct = NullableNoDefaultBus(valid=v, ready=None)
+    assert b_direct.ready is None
+    b_resolved = NullableNoDefaultBus.from_interface(
+        FakeHierarchyObject("dut", {"valid": v})
+    )
+    assert b_resolved.ready is None
+
+    # Subclassing with a non-default field after a defaulted field is rejected cleanly.
+    with pytest.raises(BusBindingError, match="non-default field cannot follow"):
+
+        class BadOrderBus(StreamBus):
+            must_have: LogicObject  # type: ignore[misc]
+
+
+def test_negative_sv_indices_and_from_interface_map() -> None:
+    elems = {
+        idx: FakeHierarchyObject(
+            f"lanes[{idx}]",
+            {
+                "valid": FakeLogicObject("valid"),
+                "data": FakeLogicArrayObject("data", 8),
+            },
+        )
+        for idx in (-1, 0, 1)
+    }
+    arr = FakeHierarchyArrayObject("lanes", elems, hdl_range=Range(-1, "to", 1))
+    bus_map = StreamBus.from_interface_map(arr)
+    assert set(bus_map.keys()) == {-1, 0, 1}
+    assert bus_map[-1].valid is elems[-1]["valid"]
+
+    # Negative index in dotted path mapping
+    dut = FakeHierarchyObject("dut", {"lanes": arr})
+    mapped = StreamBus.from_mapping(
+        dut, {"valid": "lanes[-1].valid", "data": "lanes[-1].data"}
+    )
+    assert mapped.valid is elems[-1]["valid"]
+
+
+def test_mypy_rejects_invalid_bus_attribute_statically(tmp_path: Path) -> None:
     """Negative typing test confirming mypy catches nonexistent signal access."""
     bad_file = tmp_path / "bad_bus_usage.py"
     bad_file.write_text(

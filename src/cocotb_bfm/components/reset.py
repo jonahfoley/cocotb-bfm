@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, cast
 
 from cocotb.handle import LogicArrayObject, LogicObject, PackedObject
-from cocotb.triggers import Edge, FallingEdge, RisingEdge
+from cocotb.triggers import FallingEdge, RisingEdge, ValueChange
 
 
 class ResetPolicy(Enum):
@@ -39,13 +39,26 @@ def _logic_is_high(value: Any, *, treat_x_as_active: bool, active_low: bool) -> 
     return (raw == 0) if active_low else (raw == 1)
 
 
+def _unwrap_scalar_handle(handle: Any) -> LogicObject:
+    """Extract a scalar ``LogicObject`` from ``handle`` (including 1-bit vectors)."""
+    match handle:
+        case LogicObject():
+            return handle
+        case LogicArrayObject() | PackedObject():
+            rng = getattr(handle, "range", None)
+            idx = next(iter(rng)) if rng is not None else 0
+            return cast(LogicObject, handle[idx])
+        case _:
+            return cast(LogicObject, handle)
+
+
 @dataclass(frozen=True, slots=True)
 class Reset:
     """Declarative reset signal descriptor supporting active-high/low and sync/async
     resets.
 
     Args:
-        signal: Reset signal handle (``LogicObject`` or 1-bit ``LogicArrayObject``).
+        signal: Reset signal handle (``LogicObject`` or 1-bit vector handle).
         active_low: ``True`` for active-low resets such as ``rst_n`` / ``aresetn``.
         sync: ``True`` for synchronous reset (sampled on rising clock edges); ``False``
             for asynchronous reset (monitored directly via signal edges).
@@ -73,34 +86,44 @@ class Reset:
         """Block until reset is asserted."""
         if self.is_active():
             return
-        clk = clock if clock is not None else self.clock
-        if self.sync and clk is not None:
-            clk_handle = cast(LogicObject, clk)
+        if self.sync:
+            clk = clock if clock is not None else self.clock
+            if clk is None:
+                raise ValueError(
+                    "Synchronous Reset.wait_active() requires a clock handle "
+                    "(pass clock=... or set Reset(clock=...))"
+                )
+            clk_handle = _unwrap_scalar_handle(clk)
             while not self.is_active():
                 await RisingEdge(clk_handle)
         else:
-            sig_handle = cast(LogicObject, self.signal)
+            sig_handle = _unwrap_scalar_handle(self.signal)
             edge_cls = FallingEdge if self.active_low else RisingEdge
             while not self.is_active():
                 try:
                     await edge_cls(sig_handle)
                 except Exception:
-                    await Edge(sig_handle)
+                    await ValueChange(sig_handle)
 
     async def wait_inactive(self, clock: Any | None = None) -> None:
         """Block until reset is deasserted."""
         if not self.is_active():
             return
-        clk = clock if clock is not None else self.clock
-        if self.sync and clk is not None:
-            clk_handle = cast(LogicObject, clk)
+        if self.sync:
+            clk = clock if clock is not None else self.clock
+            if clk is None:
+                raise ValueError(
+                    "Synchronous Reset.wait_inactive() requires a clock handle "
+                    "(pass clock=... or set Reset(clock=...))"
+                )
+            clk_handle = _unwrap_scalar_handle(clk)
             while self.is_active():
                 await RisingEdge(clk_handle)
         else:
-            sig_handle = cast(LogicObject, self.signal)
+            sig_handle = _unwrap_scalar_handle(self.signal)
             edge_cls = RisingEdge if self.active_low else FallingEdge
             while self.is_active():
                 try:
                     await edge_cls(sig_handle)
                 except Exception:
-                    await Edge(sig_handle)
+                    await ValueChange(sig_handle)

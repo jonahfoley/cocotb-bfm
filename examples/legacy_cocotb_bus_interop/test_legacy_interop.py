@@ -1,24 +1,22 @@
-"""Example: Incremental Migration & Interop with Legacy ``cocotb-bus`` and
-``cocotbext-*``.
+"""Incremental migration and interop with legacy ``cocotb-bus`` and ``cocotbext``.
 
-Demonstrates three low-overhead interop patterns side by side on real SystemVerilog RTL:
+Demonstrates three low-overhead interop patterns side by side on real SystemVerilog RTL
+using the **real** ``cocotb_bus`` package:
 
-1. **New ``cocotb_bfm.Monitor`` -> Legacy ``cocotb_bus.scoreboard.Scoreboard``**:
-   ``Monitor`` exposes ``add_callback()`` so ``legacy_sb.add_interface(mon, expected)``
-   works with zero glue code.
+1. **New ``cocotb_bfm.Monitor`` -> Real ``cocotb_bus.scoreboard.Scoreboard``**:
+   Wrapped with :func:`~cocotb_bfm.as_legacy_monitor` so ``Scoreboard.add_interface``'s
+   ``isinstance(monitor, cocotb_bus.monitors.Monitor)`` check succeeds cleanly.
 2. **New ``cocotb_bfm.Bus`` (bound to an SV ``interface``) -> Legacy driver via
    :func:`~cocotb_bfm.as_legacy_bus`**:
-   Wraps a statically typed ``Bus`` so legacy components expecting ``_signals`` /
-   ``_optional_signals`` / duck-typed handle attributes can drive an SV interface.
+   Wraps a statically typed ``Bus`` so legacy components checking ``isinstance(...,
+   cocotb_bus.bus.Bus)``, ``_signals``, or ``hasattr(bus, optional_sig)`` can drive an
+   SV interface directly.
 3. **Existing ``cocotbext-*`` async sink (``recv()`` / ``read()``) -> Modern
-   ``cocotb_bfm.Scoreboard`` via :class:`~cocotb_bfm.AsyncSourceAdapter`**:
-   Bridges ``cocotbext-axi``, ``cocotbext-spi``, ``cocotbext-uart``, etc. into
-   ``cocotb_bfm.Scoreboard`` without rewriting those protocol VIPs.
+   ``cocotb_bfm.Scoreboard`` via :class:`~cocotb_bfm.AsyncSourceAdapter`**.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,6 +24,10 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.handle import HierarchyObject, LogicObject
 from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb_bus.bus import Bus as LegacyCocotbBus  # type: ignore[import-untyped]
+from cocotb_bus.scoreboard import (  # type: ignore[import-untyped]
+    Scoreboard as LegacyCocotbScoreboard,
+)
 
 from cocotb_bfm import (
     AsyncSourceAdapter,
@@ -36,67 +38,13 @@ from cocotb_bfm import (
     Scoreboard,
     VectorObject,
     as_legacy_bus,
+    as_legacy_monitor,
     signal,
     sub_bus,
 )
 
-
-class _FallbackLegacyScoreboard:
-    """Minimal stand-in for ``cocotb_bus.scoreboard.Scoreboard`` when not installed."""
-
-    def __init__(self, dut: Any, *, fail_immediately: bool = True) -> None:
-        self.dut = dut
-        self.fail_immediately = fail_immediately
-        self.errors = 0
-
-    def add_interface(
-        self,
-        monitor: Any,
-        expected_output: list[Any],
-        compare_fn: Callable[[Any, Any], bool] | None = None,
-        reorder_depth: int = 0,
-        strict_type: bool = True,
-    ) -> None:
-        del reorder_depth, strict_type
-
-        def _check(got: Any) -> None:
-            if not expected_output:
-                self.errors += 1
-                raise AssertionError(f"Unexpected transaction: {got!r}")
-            exp = expected_output.pop(0)
-            ok = compare_fn(got, exp) if compare_fn is not None else (got == exp)
-            if not ok:
-                self.errors += 1
-                if self.fail_immediately:
-                    raise AssertionError(f"Mismatch: expected {exp!r}, got {got!r}")
-
-        monitor.add_callback(_check)
-
-    @property
-    def result(self) -> Exception | None:
-        if self.errors:
-            return AssertionError(f"{self.errors} scoreboard mismatch(es)")
-        return None
-
-
-# Use real `cocotb_bus.scoreboard.Scoreboard` when `cocotb-bus` is installed;
-# otherwise fall back cleanly so this example runs out of the box without extra
-# installs.
-LegacyScoreboardCls: Any
-try:
-    from cocotb_bus.scoreboard import (  # type: ignore[import-not-found]
-        Scoreboard as _RealLegacyScoreboard,
-    )
-
-    LegacyScoreboardCls = _RealLegacyScoreboard
-    USING_REAL_COCOTB_BUS = True
-except ModuleNotFoundError:
-    LegacyScoreboardCls = _FallbackLegacyScoreboard
-    USING_REAL_COCOTB_BUS = False
-
-
 # ---------------------------------------------------------------------------
-# 1. Typed cocotb-bfm Buses & Monitor (zero untyped `dut.*` attribute lookups!)
+# 1. Typed cocotb-bfm Buses & Monitor (bound to SystemVerilog `interface`s)
 # ---------------------------------------------------------------------------
 
 
@@ -104,6 +52,9 @@ class ByteStreamBus(Bus):
     valid: LogicObject = signal(direction=Direction.INITIATOR, idle_value=0)
     data: VectorObject = signal(direction=Direction.INITIATOR, width=8, idle_value=0)
     ready: LogicObject = signal(direction=Direction.TARGET, idle_value=1)
+    # Optional signal NOT present in `loopback_dut.sv`—verifies `hasattr(shim, "keep")`
+    # is False on `LegacyBusShim` just like legacy `cocotb-bus`!
+    keep: LogicObject | None = signal(default=None, direction=Direction.INITIATOR)
 
 
 class LoopbackTopBus(Bus):
@@ -127,21 +78,27 @@ class ByteStreamMonitor(Monitor[ByteStreamBus, ByteTx]):
 
 
 # ---------------------------------------------------------------------------
-# 2. Simulated legacy cocotb-bus driver & cocotbext-style async sink
+# 2. Legacy cocotb-bus / cocotbext-style components
 # ---------------------------------------------------------------------------
 
 
 class LegacyStyleDriver:
-    """Example legacy driver expecting ``bus._signals`` and duck-typed attributes."""
+    """Legacy driver checking ``isinstance(..., cocotb_bus.bus.Bus)``, ``_signals``,
+    and ``hasattr(bus, 'keep')`` before touching optional signals.
+    """
 
     def __init__(self, bus: Any, clock: LogicObject) -> None:
-        assert "valid" in bus._signals and "data" in bus._signals
+        assert isinstance(bus, LegacyCocotbBus)
+        assert set(bus._signals.keys()) == {"valid", "data", "ready"}
+        assert not hasattr(bus, "keep"), "Missing optional signal must not look present"
         self.bus = bus
         self.clock = clock
 
     async def send_byte(self, value: int) -> None:
         self.bus.valid.value = 1
         self.bus.data.value = value
+        if hasattr(self.bus, "keep"):
+            self.bus.keep.value = 1
         while True:
             await RisingEdge(self.clock)
             if int(self.bus.ready.value) == 1:
@@ -150,9 +107,7 @@ class LegacyStyleDriver:
 
 
 class CocotbextStyleSink:
-    """Example ``cocotbext-*`` sink (like ``AxiStreamSink`` / ``UartSink``) exposing
-    ``recv()``.
-    """
+    """Example ``cocotbext-*`` sink (like ``AxiStreamSink``) exposing ``recv()``."""
 
     def __init__(self, mon: ByteStreamMonitor) -> None:
         self._mon = mon
@@ -162,7 +117,7 @@ class CocotbextStyleSink:
 
 
 # ---------------------------------------------------------------------------
-# 3. End-to-End Cocotb Test Demonstrating All 3 Interop Patterns Together
+# 3. End-to-End Cocotb Test Using the Real `cocotb-bus` Package
 # ---------------------------------------------------------------------------
 
 
@@ -178,28 +133,25 @@ async def _reset_dut(top: LoopbackTopBus) -> None:
 
 @cocotb.test()
 async def test_legacy_cocotb_bus_and_cocotbext_interop(dut: HierarchyObject) -> None:
-    """Run all three interop patterns simultaneously on a real SV interface loopback."""
+    """Run all three interop patterns against the real ``cocotb-bus`` package."""
     top = LoopbackTopBus.from_interface(dut)
     await _reset_dut(top)
-    dut._log.info("Using real cocotb-bus package: %s", USING_REAL_COCOTB_BUS)
 
     rst = Reset(top.rst_n, active_low=True, sync=True)
 
     # Pattern 2: Wrap typed SV-interface Bus with `as_legacy_bus()` for a legacy driver.
     legacy_driver = LegacyStyleDriver(as_legacy_bus(top.in_if, name="in_if"), top.clk)
 
-    # Pattern 1: Plug a new `cocotb_bfm.Monitor` straight into legacy
-    # `cocotb_bus.Scoreboard`.
+    # Pattern 1: Plug a new `cocotb_bfm.Monitor` into REAL `cocotb_bus.Scoreboard`.
     legacy_expected = [ByteTx(0x11), ByteTx(0x22), ByteTx(0x33), ByteTx(0x44)]
-    legacy_sb = LegacyScoreboardCls(dut, fail_immediately=True)
+    legacy_sb = LegacyCocotbScoreboard(dut, fail_immediately=True)
 
     async with ByteStreamMonitor(
         top.out_if, top.clk, reset=rst, name="out_mon"
     ) as out_mon:
-        legacy_sb.add_interface(out_mon, legacy_expected)
+        legacy_sb.add_interface(as_legacy_monitor(out_mon), legacy_expected)
 
-        # Pattern 3: Plug a `cocotbext-*`-style async `recv()` sink into
-        # `cocotb_bfm.Scoreboard`.
+        # Pattern 3: Plug a `cocotbext-*`-style async `recv()` sink into `Scoreboard`.
         ext_sink = CocotbextStyleSink(out_mon)
         adapter = AsyncSourceAdapter.from_sink(ext_sink, name="ext_sink_adapter")
 
@@ -212,7 +164,7 @@ async def test_legacy_cocotb_bus_and_cocotbext_interop(dut: HierarchyObject) -> 
 
             await ClockCycles(top.clk, 4)
 
-    # Confirm legacy scoreboard drained and recorded zero errors.
     assert legacy_expected == []
-    if legacy_sb.result is not None:
-        raise legacy_sb.result
+    assert legacy_sb.errors == 0
+    # Accessing `legacy_sb.result` runs real `cocotb_bus.Scoreboard`'s final assertions.
+    _ = legacy_sb.result

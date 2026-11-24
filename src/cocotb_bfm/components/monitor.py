@@ -1,15 +1,18 @@
-"""Generic, composable, reset-aware ``Monitor`` with legacy scoreboard interop."""
+"""Generic, composable, reset-aware ``Monitor`` with bounded buffering."""
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 from abc import abstractmethod
-from collections.abc import AsyncIterator, Callable
+from asyncio import CancelledError
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
 
 import cocotb
 from cocotb.handle import LogicObject
-from cocotb.queue import Queue
+from cocotb.queue import Queue, QueueEmpty
+from cocotb.task import Task
 
 from cocotb_bfm.bus.base import Bus
 from cocotb_bfm.components._concurrency import race
@@ -23,13 +26,7 @@ TxT_co = TypeVar("TxT_co", covariant=True)
 
 @runtime_checkable
 class MonitorProtocol(Protocol[TxT_co]):
-    """Structural protocol satisfied by :class:`Monitor` and legacy ``cocotb-bus``
-    monitors.
-
-    Implementing ``add_callback`` allows :class:`Monitor` instances to plug directly
-    into legacy ``cocotb_bus.scoreboard.Scoreboard.add_interface()`` as well as the
-    modern :class:`~cocotb_bfm.scoreboard.Scoreboard`.
-    """
+    """Structural protocol satisfied by :class:`Monitor` and adapters."""
 
     @property
     def name(self) -> str: ...
@@ -44,11 +41,15 @@ class Monitor(Component, Generic[BusT, TxT]):
 
     1. Async queue / iteration: ``await monitor.recv()`` or ``async for tx in monitor:``
     2. Typed sync or async callbacks: ``monitor.add_callback(fn)``
-    3. Legacy ``cocotb_bus.scoreboard.Scoreboard.add_interface(monitor, expected)``
+    3. Legacy ``cocotb_bus.scoreboard.Scoreboard`` via
+       :func:`~cocotb_bfm.as_legacy_monitor`
 
-    When a :class:`Reset` is configured, reset assertion automatically cancels the
-    active :meth:`_monitor_loop` (discarding any partial multi-cycle capture), runs
-    :meth:`_on_reset`, waits for reset deassertion, and cleanly restarts monitoring.
+    To prevent unbounded memory growth during callback-only soak tests while still
+    allowing callers to ``await monitor.recv()`` without prior registration, the
+    capture queue defaults to a bounded ring buffer (``max_queue_size=1024``) that
+    evicts the oldest unread item when full instead of raising ``QueueFull``. Pass
+    ``max_queue_size=None`` if you explicitly require an unbounded queue, or
+    ``capture_queue=False`` to disable queue buffering altogether.
     """
 
     def __init__(
@@ -58,17 +59,26 @@ class Monitor(Component, Generic[BusT, TxT]):
         *,
         reset: Reset | None = None,
         name: str | None = None,
-        max_queue_size: int = 0,
+        max_queue_size: int | None = 1024,
         capture_queue: bool = True,
     ) -> None:
         super().__init__(name=name)
+        if max_queue_size is not None and max_queue_size < 1:
+            raise ValueError(
+                f"max_queue_size must be >= 1 or None (unbounded), got {max_queue_size}"
+            )
         self.bus: BusT = bus
         self.clock: LogicObject = clock
         self.reset: Reset | None = reset
         self._capture_queue: bool = capture_queue
-        self._queue: Queue[TxT] = Queue(maxsize=max_queue_size)
+        self._queue: Queue[TxT] = Queue(
+            maxsize=0 if max_queue_size is None else max_queue_size
+        )
         self._callbacks: list[Callable[[TxT], Any]] = []
         self._rx_count: int = 0
+        self._dropped_count: int = 0
+        self._async_cb_queue: Queue[Awaitable[Any]] = Queue()
+        self._async_cb_task: Task[None] | None = None
 
     @property
     def count(self) -> int:
@@ -80,11 +90,13 @@ class Monitor(Component, Generic[BusT, TxT]):
         """Number of unread transactions currently buffered in the capture queue."""
         return self._queue.qsize()
 
-    def add_callback(self, callback: Callable[[TxT], Any]) -> Callable[[TxT], Any]:
-        """Register a sync or async callback invoked for every captured transaction.
+    @property
+    def dropped_count(self) -> int:
+        """Number of unread queue items evicted when ``max_queue_size`` was exceeded."""
+        return self._dropped_count
 
-        Compatible with legacy ``cocotb_bus.scoreboard.Scoreboard.add_interface()``.
-        """
+    def add_callback(self, callback: Callable[[TxT], Any]) -> Callable[[TxT], Any]:
+        """Register a sync or async callback invoked for every captured transaction."""
         if callback not in self._callbacks:
             self._callbacks.append(callback)
         return callback
@@ -112,14 +124,39 @@ class Monitor(Component, Generic[BusT, TxT]):
         """Publish a newly captured transaction to the queue and all callbacks."""
         self._rx_count += 1
         if self._capture_queue:
+            if self._queue.maxsize > 0 and self._queue.full():
+                with contextlib.suppress(QueueEmpty):
+                    self._queue.get_nowait()
+                    self._dropped_count += 1
             self._queue.put_nowait(transaction)
         for callback in list(self._callbacks):
             result = callback(transaction)
             if inspect.isawaitable(result):
-                cocotb.start_soon(self._run_async_callback(result))
+                self._enqueue_async_callback(result)
 
-    async def _run_async_callback(self, awaitable: Any) -> None:
-        await awaitable
+    def _enqueue_async_callback(self, awaitable: Awaitable[Any]) -> None:
+        if self._async_cb_task is None or self._async_cb_task.done():
+            self._async_cb_task = cocotb.start_soon(self._async_cb_worker())
+        self._async_cb_queue.put_nowait(awaitable)
+
+    async def _async_cb_worker(self) -> None:
+        while True:
+            awaitable = await self._async_cb_queue.get()
+            await awaitable
+
+    async def _on_stop(self) -> None:
+        cb_task = self._async_cb_task
+        if cb_task is not None and not cb_task.done():
+            cb_task.cancel()
+            with contextlib.suppress(CancelledError):
+                await cb_task
+        self._async_cb_task = None
+        while not self._async_cb_queue.empty():
+            with contextlib.suppress(QueueEmpty):
+                pending_coro = self._async_cb_queue.get_nowait()
+                close_fn = getattr(pending_coro, "close", None)
+                if callable(close_fn):
+                    close_fn()
 
     async def _run(self) -> None:
         if self.reset is None:
@@ -143,9 +180,7 @@ class Monitor(Component, Generic[BusT, TxT]):
 
     @abstractmethod
     async def _monitor_loop(self) -> None:
-        """Continuously observe ``self.bus`` and call ``self._emit(tx)`` for each
-        transaction.
-        """
+        """Continuously observe ``self.bus`` and call ``self._emit(tx)``."""
 
     async def _on_reset(self) -> None:
         """Optional hook invoked when reset asserts and aborts any partial capture."""

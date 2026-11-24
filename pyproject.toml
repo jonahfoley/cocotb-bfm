@@ -39,9 +39,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "cocotb-bus>=0.3.0",
     "pytest>=8.0.0",
     "mypy>=1.11.0",
-    "pyright>=1.1.380",
     "ruff>=0.6.0",
 ]
 
@@ -62,12 +62,12 @@ warn_unused_configs = true
 warn_unreachable = true
 show_error_codes = true
 mypy_path = "src"
-packages = ["cocotb_bfm"]
+files = ["src/cocotb_bfm", "examples", "tests"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 88
-src = ["src", "tests"]
+src = ["src", "examples", "tests"]
 
 [tool.ruff.lint]
 select = [

@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 from cocotb.types import LogicArray
+from cocotb_bus.monitors import (  # type: ignore[import-untyped]
+    Monitor as LegacyCocotbMonitor,
+)
+from cocotb_bus.scoreboard import (  # type: ignore[import-untyped]
+    Scoreboard as LegacyCocotbScoreboard,
+)
 
 from cocotb_bfm import (
+    Channel,
     InOrderMatcher,
     KeyedMatcher,
     MonitorProtocol,
@@ -17,8 +25,10 @@ from cocotb_bfm import (
     ScoreboardError,
     UnorderedMatcher,
     WindowMatcher,
+    as_legacy_monitor,
     format_diff,
 )
+from tests.unit.fakes import FakeHierarchyObject
 
 
 @dataclass(frozen=True)
@@ -64,7 +74,7 @@ def test_in_order_scoreboard_pass_and_mismatch() -> None:
 
 def test_window_matcher_out_of_order() -> None:
     sb = Scoreboard(name="window_sb", fail_immediately=False)
-    ch = sb.add_channel("ch", matcher=WindowMatcher(depth=2))
+    ch: Channel[int] = sb.add_channel("ch", matcher=WindowMatcher(depth=2))
     ch.expect_many([1, 2, 3, 4])
 
     assert ch.check(3) is True
@@ -76,7 +86,9 @@ def test_window_matcher_out_of_order() -> None:
 
 def test_keyed_matcher_id_based_ooo() -> None:
     sb = Scoreboard(name="axi_sb")
-    ch = sb.add_channel("resp", matcher=KeyedMatcher(key=lambda t: t.tid))
+    ch: Channel[TaggedTx] = sb.add_channel(
+        "resp", matcher=KeyedMatcher(key=lambda t: t.tid)
+    )
 
     ch.expect(TaggedTx(tid=1, payload=0xAA))
     ch.expect(TaggedTx(tid=1, payload=0xBB))
@@ -97,7 +109,7 @@ def test_keyed_matcher_id_based_ooo() -> None:
 
 def test_unordered_matcher_and_pending_failure() -> None:
     sb = Scoreboard(name="bag_sb")
-    ch = sb.add_channel("bag", matcher=UnorderedMatcher())
+    ch: Channel[str] = sb.add_channel("bag", matcher=UnorderedMatcher())
     ch.expect_many(["a", "b", "c"])
     ch.check("c")
     ch.check("a")
@@ -139,28 +151,72 @@ def test_format_diff_with_logic_array_and_x_bits() -> None:
 
 
 def test_legacy_cocotb_bus_scoreboard_contract() -> None:
-    """Verify monitor contract works with legacy Scoreboard.add_interface."""
-
-    class LegacyScoreboardMock:
-        """Mirrors the exact monitor interaction in cocotb_bus.scoreboard.Scoreboard."""
-
-        def __init__(self) -> None:
-            self.received: list[Any] = []
-
-        def add_interface(self, monitor: Any, expected_output: list[Any]) -> None:
-            def _check(tx: Any) -> None:
-                exp = expected_output.pop(0)
-                assert tx == exp
-                self.received.append(tx)
-
-            monitor.add_callback(_check)
-
+    """Verify real cocotb_bus.scoreboard.Scoreboard works via as_legacy_monitor."""
+    dut = FakeHierarchyObject("dut")
     mon = StubMonitor("legacy_mon")
+    shim = as_legacy_monitor(mon)
+    assert isinstance(shim, LegacyCocotbMonitor)
+
     expected = [TaggedTx(0, 1), TaggedTx(1, 2)]
-    legacy = LegacyScoreboardMock()
-    legacy.add_interface(mon, expected)
+    legacy_sb = LegacyCocotbScoreboard(dut, fail_immediately=True)
+    legacy_sb.add_interface(shim, expected)
 
     mon.emit(TaggedTx(0, 1))
     mon.emit(TaggedTx(1, 2))
     assert expected == []
-    assert len(legacy.received) == 2
+    assert legacy_sb.errors == 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        with pytest.raises(BaseException) as exc_info:
+            _ = legacy_sb.result
+    assert type(exc_info.value).__name__ == "TestSuccess"
+
+    # Also verify real cocotb_bus.Scoreboard fails on unconsumed expected output
+    # and on mismatched transactions!
+    pending_sb = LegacyCocotbScoreboard(dut, fail_immediately=True)
+    pending_sb.add_interface(
+        as_legacy_monitor(StubMonitor("pend_mon")), [TaggedTx(0, 1)]
+    )
+    with pytest.raises(AssertionError, match="Not all expected output was received"):
+        _ = pending_sb.result
+
+    expected_bad = [TaggedTx(0, 99)]
+    legacy_sb_bad = LegacyCocotbScoreboard(dut, fail_immediately=True)
+    mon_bad = StubMonitor("bad_mon")
+    legacy_sb_bad.add_interface(as_legacy_monitor(mon_bad), expected_bad)
+    with pytest.raises(AssertionError, match="differed from expected"):
+        mon_bad.emit(TaggedTx(0, 123))
+
+
+def test_namedtuple_not_exploded_and_timeout_note_attached() -> None:
+    class PairTx(NamedTuple):
+        addr: int
+        data: int
+
+    ingress = StubMonitor("in")
+    egress = StubMonitor("out")
+    sb = Scoreboard(name="nt_sb")
+    ch = sb.add_channel("out", egress)
+    sb.connect_model(
+        ingress, lambda x: PairTx(addr=x, data=x + 1), ch, expand_iterables=True
+    )
+
+    ingress.emit(10)
+    assert ch.pending_count == 1
+    egress.emit(PairTx(10, 11))
+    sb.assert_clean()
+
+    # Verify __aexit__ attaches PEP 678 note when an outer exception (e.g. timeout)
+    # exits while expected items are still pending!
+    import asyncio
+
+    async def _sim_timeout() -> None:
+        async with Scoreboard(name="timeout_sb") as tsb:
+            tch: Channel[PairTx] = tsb.add_channel("egress")
+            tch.expect(PairTx(1, 2))
+            raise TimeoutError("simulated watchdog timeout")
+
+    with pytest.raises(TimeoutError) as exc_info:
+        asyncio.run(_sim_timeout())
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert any("pending=1" in n for n in notes)

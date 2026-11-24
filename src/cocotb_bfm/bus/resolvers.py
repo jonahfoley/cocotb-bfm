@@ -6,6 +6,7 @@ import difflib
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from cocotb.handle import HierarchyObject, SimHandleBase
@@ -14,8 +15,17 @@ from cocotb_bfm.bus.spec import SignalSpec, SubBusSpec
 from cocotb_bfm.bus.validation import handle_path
 from cocotb_bfm.exceptions import SignalNotFoundError
 
-_INDEX_PART_RE = re.compile(r"^(?P<name>[^\[]+)(?P<indices>(?:\[\d+\])+)$")
-_SINGLE_INDEX_RE = re.compile(r"\[(\d+)\]")
+_INDEX_PART_RE = re.compile(r"^(?P<name>[^\[]+)(?P<indices>(?:\[-?\d+\])+)$")
+_SINGLE_INDEX_RE = re.compile(r"\[(-?\d+)\]")
+
+
+@dataclass(frozen=True, slots=True)
+class SubBusResolution:
+    """Outcome of locating a nested sub-bus target scope and child resolver."""
+
+    scope: Any
+    resolver: SignalResolver
+    dedicated_scope: bool = False
 
 
 def list_scope_keys(scope: Any) -> list[str]:
@@ -85,7 +95,7 @@ def resolve_path(
     *,
     case_insensitive: bool = False,
 ) -> Any | None:
-    """Resolve a dotted/indexed HDL path such as ``'sub_if.lanes[0].valid'``."""
+    """Resolve a dotted/indexed HDL path such as ``'sub_if.lanes[-1].valid'``."""
     current: Any = scope
     for segment in path.split("."):
         match = _INDEX_PART_RE.match(segment)
@@ -130,7 +140,6 @@ def format_not_found_error(
             for m in difflib.get_close_matches(cand, available, n=3, cutoff=0.5):
                 if m not in suggestions:
                     suggestions.append(m)
-            # Also try case-insensitive fuzzy match on tail segment.
             lower_map = {k.lower(): k for k in available}
             for lm in difflib.get_close_matches(
                 cand.lower(), lower_map.keys(), n=2, cutoff=0.5
@@ -179,8 +188,8 @@ class SignalResolver(ABC):
         self,
         scope: Any,
         spec: SubBusSpec,
-    ) -> tuple[Any, SignalResolver] | None:
-        """Return ``(child_scope, child_resolver)`` for a nested sub-bus, or ``None``.
+    ) -> SubBusResolution | None:
+        """Return a :class:`SubBusResolution` for ``spec``, or ``None``.
 
         Subclasses override this to support nested scopes (e.g., SV sub-interfaces)
         or composed prefixes.
@@ -224,14 +233,16 @@ class InterfaceResolver(SignalResolver):
         self,
         scope: Any,
         spec: SubBusSpec,
-    ) -> tuple[Any, SignalResolver] | None:
+    ) -> SubBusResolution | None:
         # 1. Try nested interface / hierarchy scope (e.g., axi_if.aw).
         for candidate in spec.candidate_names:
             child = lookup_child(
                 scope, candidate, case_insensitive=self.case_insensitive
             )
             if child is not None and _is_scope_like(child):
-                return child, self
+                return SubBusResolution(
+                    scope=child, resolver=self, dedicated_scope=True
+                )
 
         # 2. Fallback: flat prefixed signals within the same interface
         #    (e.g., axi_if.aw_valid or axi_if.awvalid).
@@ -249,7 +260,11 @@ class InterfaceResolver(SignalResolver):
             for candidate in spec.candidate_names
             for sep in seps
         ]
-        return scope, CompositeResolver(resolvers)
+        return SubBusResolution(
+            scope=scope,
+            resolver=CompositeResolver(resolvers),
+            dedicated_scope=False,
+        )
 
 
 class PrefixResolver(SignalResolver):
@@ -293,7 +308,7 @@ class PrefixResolver(SignalResolver):
         self,
         scope: Any,
         spec: SubBusSpec,
-    ) -> tuple[Any, SignalResolver] | None:
+    ) -> SubBusResolution | None:
         sep = self.separator if spec.separator is None else spec.separator
         resolvers: list[SignalResolver] = []
         for candidate in spec.candidate_names:
@@ -321,7 +336,11 @@ class PrefixResolver(SignalResolver):
                         case_insensitive=self.case_insensitive,
                     )
                 )
-        return scope, CompositeResolver(resolvers)
+        return SubBusResolution(
+            scope=scope,
+            resolver=CompositeResolver(resolvers),
+            dedicated_scope=False,
+        )
 
 
 class MappingResolver(SignalResolver):
@@ -364,28 +383,44 @@ class MappingResolver(SignalResolver):
         self,
         scope: Any,
         spec: SubBusSpec,
-    ) -> tuple[Any, SignalResolver] | None:
+    ) -> SubBusResolution | None:
         if spec.attr_name not in self.mapping:
             return None
         match self.mapping[spec.attr_name]:
             case Mapping() as nested_map:
-                return scope, MappingResolver(
-                    nested_map, case_insensitive=self.case_insensitive
+                return SubBusResolution(
+                    scope=scope,
+                    resolver=MappingResolver(
+                        nested_map, case_insensitive=self.case_insensitive
+                    ),
+                    dedicated_scope=bool(nested_map),
                 )
             case str() as path:
                 child = resolve_path(
                     scope, path, case_insensitive=self.case_insensitive
                 )
                 if child is not None and _is_scope_like(child):
-                    return child, InterfaceResolver(
-                        case_insensitive=self.case_insensitive
+                    return SubBusResolution(
+                        scope=child,
+                        resolver=InterfaceResolver(
+                            case_insensitive=self.case_insensitive
+                        ),
+                        dedicated_scope=True,
                     )
-                return scope, PrefixResolver(
-                    prefix=path,
-                    case_insensitive=self.case_insensitive,
+                return SubBusResolution(
+                    scope=scope,
+                    resolver=PrefixResolver(
+                        prefix=path,
+                        case_insensitive=self.case_insensitive,
+                    ),
+                    dedicated_scope=False,
                 )
             case target if _is_scope_like(target):
-                return target, InterfaceResolver(case_insensitive=self.case_insensitive)
+                return SubBusResolution(
+                    scope=target,
+                    resolver=InterfaceResolver(case_insensitive=self.case_insensitive),
+                    dedicated_scope=True,
+                )
             case _:
                 return None
 
@@ -471,7 +506,7 @@ class CompositeResolver(SignalResolver):
         self,
         scope: Any,
         spec: SubBusSpec,
-    ) -> tuple[Any, SignalResolver] | None:
+    ) -> SubBusResolution | None:
         for resolver in self.resolvers:
             result = resolver.resolve_sub_bus(scope, spec)
             if result is not None:

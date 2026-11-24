@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import cocotb
 from cocotb.clock import Clock
 from cocotb.handle import HierarchyObject, LogicObject
-from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb.triggers import ClockCycles, RisingEdge, Timer
+from cocotb_bus.scoreboard import (  # type: ignore[import-untyped]
+    Scoreboard as LegacyCocotbScoreboard,
+)
 
 from cocotb_bfm import (
     AsyncSourceAdapter,
@@ -17,6 +18,7 @@ from cocotb_bfm import (
     ResetError,
     ResetPolicy,
     Scoreboard,
+    as_legacy_monitor,
 )
 from tests.rtl.stream_bfm import (
     DummyStreamBus,
@@ -127,11 +129,23 @@ async def test_flat_prefix_and_sv_interface_array_and_1bit_vector(
     lanes = DummyStreamBus.from_interface_array(dut["lanes_if"])
     assert len(lanes) == 2
 
-    # 3. 1-bit `logic [0:0]` vector tolerance on real Verilator handles
+    # 3. 1-bit `logic [0:0]` vector tolerance + async Reset trigger on PackedObject!
     flag_bus = OneBitFlagBus.from_entity(dut)
+    onebit_rst = Reset(flag_bus.flag, active_low=False, sync=False)
+    waiter = cocotb.start_soon(onebit_rst.wait_active())
+    await Timer(2, unit="ns")
     flag_bus.flag.value = 1
+    await waiter
     await RisingEdge(tb.clk)
     assert int(flag_bus.echo.value) == 1
+
+    # Sync Reset without a clock handle must raise ValueError rather than falling back!
+    clkless_rst = Reset(tb.rst_n, active_low=True, sync=True)
+    try:
+        await clkless_rst.wait_active()
+        raise AssertionError("Expected ValueError for clockless sync Reset")
+    except ValueError:
+        pass
 
     async with (
         DummyStreamDriver(raw_in, tb.clk, name="raw_drv") as raw_drv,
@@ -205,8 +219,27 @@ async def test_explicit_lifecycle_and_reset_flush_and_pause(
         await drv_flush.send(DummyStreamTx(data=0x44, last=1))
         got = await mon.recv()
         assert got == DummyStreamTx(data=0x44 ^ 0x5A, last=1)
+
+    # Stopping a busy driver must immediately fail pending TxHandles with
+    # ComponentLifecycleError instead of deadlocking!
+    out_bus.ready.value = 0
+    await drv_flush.send(DummyStreamTx(data=0x51))
+    h_aborted_on_stop = drv_flush.enqueue(DummyStreamTx(data=0x52))
+    await ClockCycles(tb.clk, 2)
     await drv_flush.stop()
-    assert not drv_flush.running
+    assert not bool(drv_flush.running)
+    await RisingEdge(tb.clk)
+    assert int(in_bus.valid.value) == 0
+    try:
+        await h_aborted_on_stop.wait()
+        raise AssertionError("Expected ComponentLifecycleError when driver stops")
+    except ComponentLifecycleError:
+        pass
+    out_bus.ready.value = 1
+    tb.rst_n.value = 0
+    await ClockCycles(tb.clk, 2)
+    tb.rst_n.value = 1
+    await RisingEdge(tb.clk)
 
     # Now test explicit ResetPolicy.PAUSE: interrupted transaction retries after reset!
     async with (
@@ -242,7 +275,9 @@ async def test_explicit_lifecycle_and_reset_flush_and_pause(
 async def test_cocotbext_adapter_and_legacy_scoreboard_interop(
     dut: HierarchyObject,
 ) -> None:
-    """Verify `AsyncSourceAdapter` (cocotbext style) and legacy `add_callback`."""
+    """Verify `AsyncSourceAdapter`, bounded Monitor ring buffer, and REAL
+    `cocotb_bus.scoreboard.Scoreboard`.
+    """
     tb, in_bus, out_bus = await _init_dut(dut)
 
     # Simulate a cocotbext-style sink exposing `async def recv()`.
@@ -253,39 +288,42 @@ async def test_cocotbext_adapter_and_legacy_scoreboard_interop(
         async def recv(self) -> DummyStreamTx:
             return await self._mon.recv()
 
-    # Simulate legacy cocotb_bus.scoreboard.Scoreboard.add_interface(monitor, expected).
-    legacy_received: list[Any] = []
-
-    class LegacyScoreboardContract:
-        def add_interface(self, monitor: Any, expected: list[Any]) -> None:
-            def _cb(tx: Any) -> None:
-                exp = expected.pop(0)
-                assert tx == exp
-                legacy_received.append(tx)
-
-            monitor.add_callback(_cb)
-
     async with (
         DummyStreamDriver(in_bus, tb.clk, name="interop_drv") as drv,
+        # Bounded ring buffer (max_queue_size=2) with 4 items verifies zero QueueFull
+        # crash when callbacks/Scoreboards are active!
+        DummyStreamMonitor(
+            out_bus, tb.clk, name="bounded_mon", max_queue_size=2
+        ) as bounded_mon,
         DummyStreamMonitor(out_bus, tb.clk, name="interop_mon") as mon,
     ):
         sink = FakeCocotbextSink(mon)
         adapter = AsyncSourceAdapter.from_sink(sink, name="ext_sink")
-        legacy_expected = [
+
+        # Real `cocotb_bus.scoreboard.Scoreboard` from `cocotb-bus` package!
+        expected_txs = [
             DummyStreamTx(data=0x0F ^ 0x5A),
             DummyStreamTx(data=0xF0 ^ 0x5A),
+            DummyStreamTx(data=0x3C ^ 0x5A),
+            DummyStreamTx(data=0xC3 ^ 0x5A),
         ]
-        LegacyScoreboardContract().add_interface(mon, legacy_expected)
+        legacy_expected = list(expected_txs)
+        legacy_sb = LegacyCocotbScoreboard(dut, fail_immediately=True)
+        legacy_sb.add_interface(as_legacy_monitor(bounded_mon), legacy_expected)
 
         async with adapter, Scoreboard(name="adapter_sb") as sb:
             ch = sb.add_channel("ext", adapter)
-            ch.expect_many(
-                [DummyStreamTx(data=0x0F ^ 0x5A), DummyStreamTx(data=0xF0 ^ 0x5A)]
-            )
+            ch.expect_many(expected_txs)
 
-            await drv.send(DummyStreamTx(data=0x0F))
-            await drv.send(DummyStreamTx(data=0xF0))
+            for raw in (0x0F, 0xF0, 0x3C, 0xC3):
+                await drv.send(DummyStreamTx(data=raw))
             await ClockCycles(tb.clk, 4)
 
         assert legacy_expected == []
-        assert len(legacy_received) == 2
+        assert legacy_sb.errors == 0
+        assert bounded_mon.count == 4
+        assert bounded_mon.pending == 2
+        assert bounded_mon.dropped_count == 2
+
+    # Evaluate `legacy_sb.result` at test end (calls `cocotb.pass_test()` on 2.x).
+    _ = legacy_sb.result
