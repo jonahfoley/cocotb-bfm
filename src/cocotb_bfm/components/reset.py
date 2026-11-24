@@ -45,9 +45,14 @@ def _unwrap_scalar_handle(handle: Any) -> LogicObject:
         case LogicObject():
             return handle
         case LogicArrayObject() | PackedObject():
-            rng = getattr(handle, "range", None)
-            idx = next(iter(rng)) if rng is not None else 0
-            return cast(LogicObject, handle[idx])
+            try:
+                rng = getattr(handle, "range", None)
+                idx = next(iter(rng)) if rng is not None else 0
+                return cast(LogicObject, handle[idx])
+            except (IndexError, TypeError, RuntimeError):
+                # Some backends (e.g. GHDL VPI) do not expose bit-indexed handles on
+                # 1-bit vectors; callers fall back to ValueChange(handle).
+                return cast(LogicObject, handle)
         case _:
             return cast(LogicObject, handle)
 
